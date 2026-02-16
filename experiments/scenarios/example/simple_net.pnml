@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pnml>
+  <net id="simple_net" type="http://www.pnml.org/version-2009/grammar/pnmlcoremodel">
+    <page id="page0">
+      <place id="p0">
+        <name><text>source</text></name>
+        <initialMarking><text>1</text></initialMarking>
+      </place>
+      <place id="p1">
+        <name><text>sink</text></name>
+      </place>
+      <transition id="t0">
+        <name><text>act</text></name>
+      </transition>
+      <arc id="a0" source="p0" target="t0" />
+      <arc id="a1" source="t0" target="p1" />
+    </page>
+    <finalmarkings>
+      <marking>
+        <place idref="p1">
+          <text>1</text>
+        </place>
+      </marking>
+    </finalmarkings>
+  </net>
+</pnml>

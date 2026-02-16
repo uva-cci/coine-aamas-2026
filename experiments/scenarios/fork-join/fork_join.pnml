@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pnml>
+  <net id="fork_join" type="http://www.pnml.org/version-2009/grammar/pnmlcoremodel">
+    <page id="page0">
+      <place id="p0">
+        <name><text>start</text></name>
+        <initialMarking><text>1</text></initialMarking>
+      </place>
+      <place id="p1">
+        <name><text>p1</text></name>
+      </place>
+      <place id="p2">
+        <name><text>p2</text></name>
+      </place>
+      <place id="p3">
+        <name><text>p3</text></name>
+      </place>
+      <place id="p4">
+        <name><text>p4</text></name>
+      </place>
+      <place id="p5">
+        <name><text>end</text></name>
+      </place>
+      <transition id="fork">
+        <name><text>fork</text></name>
+      </transition>
+      <transition id="branch_a">
+        <name><text>branch-a</text></name>
+      </transition>
+      <transition id="branch_b">
+        <name><text>branch-b</text></name>
+      </transition>
+      <transition id="join">
+        <name><text>join</text></name>
+      </transition>
+      <arc id="a0" source="p0" target="fork" />
+      <arc id="a1" source="fork" target="p1" />
+      <arc id="a2" source="fork" target="p2" />
+      <arc id="a3" source="p1" target="branch_a" />
+      <arc id="a4" source="branch_a" target="p3" />
+      <arc id="a5" source="p2" target="branch_b" />
+      <arc id="a6" source="branch_b" target="p4" />
+      <arc id="a7" source="p3" target="join" />
+      <arc id="a8" source="p4" target="join" />
+      <arc id="a9" source="join" target="p5" />
+    </page>
+    <finalmarkings>
+      <marking>
+        <place idref="p5">
+          <text>1</text>
+        </place>
+      </marking>
+    </finalmarkings>
+  </net>
+</pnml>

@@ -1,0 +1,32 @@
+[project]
+name = "lib"
+version = "0.1.0"
+description = "Petri net analysis for COINE AAMAS 2026"
+readme = "README.md"
+authors = [
+    { name = "Andrea Marino", email = "a.marino@uva.nl" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pm4py>=2.7.19.8",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.15,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "ruff>=0.15.1",
+]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
