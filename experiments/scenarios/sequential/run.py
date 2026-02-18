@@ -1,18 +1,40 @@
-"""Sequential scenario: load and visualize the Petri net."""
+"""Sequential scenario: power index analysis."""
 
 from pathlib import Path
 
-from lib import load_pnml, save_net_png
+from lib import banzhaf, load_pnml, shapley_shubik
 
 SCENARIO_DIR = Path(__file__).parent
+
+CONFIGS = {
+    "Even": {
+        "t0": {"1", "2", "3"},
+        "t1": {"1", "2", "3"},
+        "t2": {"1", "2", "3"},
+    },
+    "Bottleneck": {
+        "t0": {"1", "2", "3"},
+        "t1": {"1", "2", "3"},
+        "t2": {"1"},
+    },
+    "Funnel": {
+        "t0": {"1", "2", "3"},
+        "t1": {"1", "2"},
+        "t2": {"1"},
+    },
+}
 
 
 def main() -> None:
     net, im, fm = load_pnml(SCENARIO_DIR / "sequential.pnml")
-    output_dir = SCENARIO_DIR / "outputs"
-    output_dir.mkdir(exist_ok=True)
-    save_net_png(net, im, fm, output_dir / "sequential.png")
-    print(f"Saved visualization to {output_dir / 'sequential.png'}")
+
+    for name, agent_mapping in CONFIGS.items():
+        print(f"--- {name} ---")
+        ss = shapley_shubik(net, im, fm, agent_mapping)
+        bz = banzhaf(net, im, fm, agent_mapping)
+        print(f"  Shapley-Shubik: {ss}")
+        print(f"  Banzhaf:        {bz}")
+        print()
 
 
 if __name__ == "__main__":
