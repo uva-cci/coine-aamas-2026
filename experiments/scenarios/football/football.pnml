@@ -1,0 +1,109 @@
+<?xml version="1.0" ?>
+<pnml>
+  <net id="football" type="http://www.pnml.org/version-2009/grammar/pnmlcoremodel">
+    <page id="page0">
+      <place id="Defense">
+        <name>
+          <text>Defense</text>
+        </name>
+        <initialMarking>
+          <text>1</text>
+        </initialMarking>
+      </place>
+      <place id="Midfield">
+        <name>
+          <text>Midfield</text>
+        </name>
+      </place>
+      <place id="Attack">
+        <name>
+          <text>Attack</text>
+        </name>
+      </place>
+      <place id="Goal">
+        <name>
+          <text>Goal</text>
+        </name>
+      </place>
+      <transition id="pass_def_mid">
+        <name>
+          <text>pass_def_mid</text>
+        </name>
+        <toolspecific tool="StochasticPetriNet" version="0.2">
+          <property key="weight">5</property>
+          <property key="distributionType">IMMEDIATE</property>
+          <property key="priority">1</property>
+        </toolspecific>
+      </transition>
+      <transition id="fail_def">
+        <name>
+          <text>fail_def</text>
+        </name>
+        <toolspecific tool="StochasticPetriNet" version="0.2">
+          <property key="weight">5</property>
+          <property key="distributionType">IMMEDIATE</property>
+          <property key="priority">1</property>
+        </toolspecific>
+      </transition>
+      <transition id="pass_mid_att">
+        <name>
+          <text>pass_mid_att</text>
+        </name>
+        <toolspecific tool="StochasticPetriNet" version="0.2">
+          <property key="weight">3</property>
+          <property key="distributionType">IMMEDIATE</property>
+          <property key="priority">1</property>
+        </toolspecific>
+      </transition>
+      <transition id="fail_mid">
+        <name>
+          <text>fail_mid</text>
+        </name>
+        <toolspecific tool="StochasticPetriNet" version="0.2">
+          <property key="weight">7</property>
+          <property key="distributionType">IMMEDIATE</property>
+          <property key="priority">1</property>
+        </toolspecific>
+      </transition>
+      <transition id="shoot">
+        <name>
+          <text>shoot</text>
+        </name>
+        <toolspecific tool="StochasticPetriNet" version="0.2">
+          <property key="weight">3</property>
+          <property key="distributionType">IMMEDIATE</property>
+          <property key="priority">1</property>
+        </toolspecific>
+      </transition>
+      <transition id="fail_att">
+        <name>
+          <text>fail_att</text>
+        </name>
+        <toolspecific tool="StochasticPetriNet" version="0.2">
+          <property key="weight">7</property>
+          <property key="distributionType">IMMEDIATE</property>
+          <property key="priority">1</property>
+        </toolspecific>
+      </transition>
+      <arc id="a0" source="Defense" target="pass_def_mid"/>
+      <arc id="a1" source="pass_def_mid" target="Midfield"/>
+      <arc id="a2" source="Defense" target="fail_def"/>
+      <arc id="a3" source="fail_def" target="Defense"/>
+      <arc id="a4" source="Midfield" target="pass_mid_att"/>
+      <arc id="a5" source="pass_mid_att" target="Attack"/>
+      <arc id="a6" source="Midfield" target="fail_mid"/>
+      <arc id="a7" source="fail_mid" target="Defense"/>
+      <arc id="a8" source="Attack" target="shoot"/>
+      <arc id="a9" source="shoot" target="Goal"/>
+      <arc id="a10" source="Attack" target="fail_att"/>
+      <arc id="a11" source="fail_att" target="Defense"/>
+    </page>
+    <finalmarkings>
+      <marking>
+        <place idref="Goal">
+          <text>1</text>
+        </place>
+      </marking>
+    </finalmarkings>
+  </net>
+</pnml>
