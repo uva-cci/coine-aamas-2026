@@ -17,6 +17,7 @@ from lib import (
     banzhaf,
     gatekeeper,
     load_pnml_stochastic,
+    participation,
     shapley_shubik,
     usability,
 )
@@ -39,6 +40,7 @@ INDEX_LABELS: dict[str, tuple[str, str]] = {
     "Shapley-Shubik": ("Shapley-Shubik", r"$\phi_{a_i}$"),
     "Banzhaf": ("Banzhaf", r"$\beta_{a_i}$"),
     "Usability": ("Usability", r"$U(a_i)$"),
+    "Participation": ("Participation", r"$P(a_i)$"),
     "Gatekeeper": ("Gatekeeper", r"$G(a_i)$"),
 }
 
@@ -341,7 +343,7 @@ def main() -> None:
             print(f"Saved overlay to {pdf_path}", file=sys.stderr)
 
     # Compute power indices for each formation
-    index_names = ["Shapley-Shubik", "Banzhaf", "Usability", "Gatekeeper"]
+    index_names = ["Shapley-Shubik", "Banzhaf", "Usability", "Participation", "Gatekeeper"]
     results: list[dict] = []
 
     for name, (n_def, n_mid, n_att) in FORMATIONS.items():
@@ -354,6 +356,7 @@ def main() -> None:
                 ("Shapley-Shubik", shapley_shubik),
                 ("Banzhaf", banzhaf),
                 ("Usability", partial(usability, start_place="Defense")),
+                ("Participation", partial(participation, start_place="Defense")),
                 ("Gatekeeper", gatekeeper),
             ]
         }

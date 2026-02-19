@@ -239,6 +239,56 @@ def usability(
     return scores
 
 
+def participation(
+    net: PetriNet,
+    im: Marking,
+    fm: Marking,
+    agent_mapping: AgentMapping,
+    *,
+    normalized: bool = True,
+    start_place: str | None = None,
+) -> dict[str, float]:
+    """Compute the participation index for each agent.
+
+    For each firing sequence (simple path from *im* to *fm*), count the
+    fraction of transitions that each agent can fire, then average across
+    all paths.
+
+    participation(a) = (1/|S|) * sum_s [ #{t in s : a can fire t} / |s| ]
+
+    When *normalized* is True (default), scores are rescaled to sum to 1.
+
+    When *start_place* is given, paths are enumerated from a single-token
+    marking in that place instead of *im*.
+    """
+    agents = sorted({a for s in agent_mapping.values() for a in s})
+    paths = _all_simple_paths(net, im, fm, start_place=start_place)
+
+    if not paths:
+        return {a: 0.0 for a in agents}
+
+    scores: dict[str, float] = {a: 0.0 for a in agents}
+    for path in paths:
+        path_len = len(path)
+        if path_len == 0:
+            continue
+        for t_name in path:
+            capable = agent_mapping.get(t_name, set())
+            for agent in capable:
+                scores[agent] += 1.0 / path_len
+
+    # Average across paths
+    n_paths = len(paths)
+    scores = {a: v / n_paths for a, v in scores.items()}
+
+    if normalized:
+        total = sum(scores.values())
+        if total > 0:
+            scores = {a: v / total for a, v in scores.items()}
+
+    return scores
+
+
 def gatekeeper(
     net: PetriNet,
     im: Marking,

@@ -5,7 +5,7 @@ import sys
 from functools import partial
 from pathlib import Path
 
-from lib import banzhaf, gatekeeper, load_pnml, shapley_shubik, usability
+from lib import banzhaf, gatekeeper, load_pnml, participation, shapley_shubik, usability
 
 SCENARIO_DIR = Path(__file__).parent
 
@@ -37,6 +37,7 @@ INDEX_SPECS = [
     ("Shapley-Shubik", r"$\phi_{a_i}$", shapley_shubik),
     ("Banzhaf", r"$\beta_{a_i}$", banzhaf),
     ("Usability", r"$U(a_i)$", partial(usability, start_place="p0")),
+    ("Participation", r"$P(a_i)$", partial(participation, start_place="p0")),
     ("Gatekeeper", r"$G(a_i)$", gatekeeper),
 ]
 
