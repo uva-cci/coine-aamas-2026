@@ -139,11 +139,20 @@ def gatekeeper(
 ```
 Gatekeeper power index. Position weight `(L-p)/L` (earlier transitions weigh more), credit shared equally among capable agents. Summed across all simple paths.
 
+```python
+def gatekeeper_reach(
+    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
+    *, normalized: bool = True,
+) -> dict[str, float]
+```
+Reachability-weighted gatekeeper variant. Weight = `|R(m')|` (number of markings reachable from the marking after firing the transition). Replaces the positional `(L-p)/L` proxy with actual forward-reachability set size. Credit shared equally among capable agents, summed across all simple paths.
+
 #### Internal helpers (not exported)
 
 - `_resolve_transitions(net, agent_mapping)` — map transition names to `Transition` objects
 - `_precompute_characteristic_function(net, im, fm, agent_mapping)` — enumerate all coalitions, compute characteristic function `v`
 - `_all_simple_paths(net, im, fm, *, start_place=None)` — DFS for all simple paths (no repeated markings)
+- `_reachability_set_size(net, marking)` — BFS count of all markings reachable from a given marking
 
 ## Conventions
 

@@ -3,6 +3,7 @@
 from lib.analysis import (
     banzhaf,
     gatekeeper,
+    gatekeeper_reach,
     incidence_matrix,
     is_reachable_restricted,
     reachability_graph,
@@ -16,6 +17,7 @@ __all__ = [
     "banzhaf",
     "build_stochastic_decorations",
     "gatekeeper",
+    "gatekeeper_reach",
     "incidence_matrix",
     "is_reachable_restricted",
     "load_pnml",

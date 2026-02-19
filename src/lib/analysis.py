@@ -239,6 +239,20 @@ def usability(
     return scores
 
 
+def _reachability_set_size(net: PetriNet, marking: Marking) -> int:
+    """Count all markings reachable from *marking* (including itself) via BFS."""
+    visited: set[Marking] = {marking}
+    queue: list[Marking] = [marking]
+    while queue:
+        m = queue.pop(0)
+        for t in pn_semantics.enabled_transitions(net, m):
+            m2 = pn_semantics.execute(t, net, m)
+            if m2 not in visited:
+                visited.add(m2)
+                queue.append(m2)
+    return len(visited)
+
+
 def gatekeeper(
     net: PetriNet,
     im: Marking,
@@ -273,6 +287,54 @@ def gatekeeper(
             n_capable = len(capable)
             if n_capable > 0:
                 contribution = position_weight / n_capable
+                for agent in capable:
+                    scores[agent] += contribution
+
+    if normalized:
+        total = sum(scores.values())
+        if total > 0:
+            scores = {a: v / total for a, v in scores.items()}
+
+    return scores
+
+
+def gatekeeper_reach(
+    net: PetriNet,
+    im: Marking,
+    fm: Marking,
+    agent_mapping: AgentMapping,
+    *,
+    normalized: bool = True,
+) -> dict[str, float]:
+    """Gatekeeper variant weighted by forward-reachability set size.
+
+    For each transition in a simple path, the weight is the number of markings
+    reachable from the marking obtained after firing that transition.  Credit is
+    shared equally among the agents that can fire the transition.
+
+    When *normalized* is True (default), scores are rescaled to sum to 1.
+    """
+    agents = sorted({a for s in agent_mapping.values() for a in s})
+    paths = _all_simple_paths(net, im, fm)
+
+    if not paths:
+        return {a: 0.0 for a in agents}
+
+    by_name = {t.name: t for t in net.transitions}
+    reach_cache: dict[Marking, int] = {}
+
+    scores: dict[str, float] = {a: 0.0 for a in agents}
+    for path in paths:
+        marking = im
+        for t_name in path:
+            marking = pn_semantics.execute(by_name[t_name], net, marking)
+            if marking not in reach_cache:
+                reach_cache[marking] = _reachability_set_size(net, marking)
+            weight = reach_cache[marking]
+            capable = agent_mapping.get(t_name, set())
+            n_capable = len(capable)
+            if n_capable > 0:
+                contribution = weight / n_capable
                 for agent in capable:
                     scores[agent] += contribution
 
