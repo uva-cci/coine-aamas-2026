@@ -1,42 +1,154 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents when working with code in this repository.
+Project-scoped memory for AI coding agents working on this repository.
 
 ## Project Overview
 
-Research project for COINE @ AAMAS 2026 — Petri net analysis using pm4py. The `lib` package (`src/lib/`) provides thin wrappers around pm4py for loading, analyzing, and visualizing Petri nets. Experiments live in `experiments/scenarios/<name>/` each with PNML files and a `run.py` script.
+Research project for COINE @ AAMAS 2026 — Petri net analysis using pm4py. The `lib` package (`src/lib/`) provides thin wrappers around pm4py for loading, analyzing, and visualizing Petri nets. Experiments live in `experiments/scenarios/<name>/`.
+
+## Project Structure
+
+```
+├── AGENTS.md
+├── pyproject.toml / uv.lock
+├── src/lib/                          # core library (installed as `lib` via uv)
+│   ├── __init__.py                   # re-exports all public API
+│   ├── io.py                         # PNML loading
+│   ├── analysis.py                   # power indices & structural analysis
+│   ├── viz.py                        # PNG visualization
+│   └── py.typed
+├── experiments/scenarios/
+│   ├── example/                      # minimal net — simple_net.pnml
+│   ├── sequential/                   # sequential net — sequential.pnml
+│   ├── fork-join/                    # fork-join net — fork_join.pnml
+│   └── football/                     # zone-based stochastic SPN — football.pnml
+│       ├── run.py
+│       └── generate_pnml.py          # builds football.pnml programmatically
+└── tests/                            # configured in pyproject.toml (empty)
+```
+
+Each scenario directory contains a `run.py` and one `.pnml` file. Outputs go to an `outputs/` subfolder (gitignored).
 
 ## Commands
 
 ```bash
-# Install dependencies
-uv sync
-
-# Run tests
-uv run pytest
-
-# Run a single test
-uv run pytest tests/test_foo.py::test_bar
-
-# Lint
-uv run ruff check src/ experiments/
-uv run ruff format --check src/ experiments/
-
-# Run an experiment scenario
-uv run experiments/scenarios/<name>/run.py
+uv sync                                       # install dependencies
+uv run pytest                                  # run tests
+uv run pytest tests/test_foo.py::test_bar      # run a single test
+uv run ruff check src/ experiments/            # lint
+uv run ruff format --check src/ experiments/   # format check
+uv run experiments/scenarios/<name>/run.py      # run a scenario
 ```
 
-## Architecture
+## Key Types
 
-- **`src/lib/`** — Core library (installed as `lib` package via uv)
-  - `io.py` — PNML loading (`load_pnml`)
-  - `analysis.py` — Structural analysis (incidence matrix, reachability graph)
-  - `viz.py` — PNG visualization of nets
-- **`experiments/scenarios/<name>/`** — Each scenario has its own PNML files and `run.py`; outputs go to an `outputs/` subfolder (gitignored)
+```python
+# analysis.py — maps each transition name to the set of agents that can fire it
+AgentMapping = dict[str, set[str]]
+```
+
+From pm4py:
+- `PetriNet`, `Marking` — from `pm4py.objects.petri_net.obj`
+- `PetriNet.Transition` — transition objects within a net
+- `TransitionSystem` — from `pm4py.objects.petri_net.utils.reachability_graph`
+- Stochastic map: `dict[PetriNet.Transition, RandomVariable]` — maps transitions to pm4py `RandomVariable` (weight, priority, distribution)
+
+## Library API
+
+### io.py — PNML Loading
+
+```python
+def load_pnml(path: str | Path) -> tuple[PetriNet, Marking, Marking]
+```
+Load a Petri net from a PNML file. Returns `(net, initial_marking, final_marking)`.
+
+```python
+def load_pnml_stochastic(path: str | Path) -> tuple[PetriNet, Marking, Marking, dict[Any, Any]]
+```
+Load a Petri net with stochastic information. Returns `(net, im, fm, stochastic_map)`.
+
+### viz.py — Visualization
+
+```python
+def build_stochastic_decorations(stochastic_map: dict[Any, Any]) -> dict[Any, dict[str, str]]
+```
+Convert a stochastic map into a pm4py decorations dict (label with weight, blue color).
+
+```python
+def save_net_png(
+    net: PetriNet, initial_marking: Marking, final_marking: Marking,
+    output_path: str | Path, decorations: dict[Any, Any] | None = None,
+) -> None
+```
+Save a Petri net visualization as PNG.
+
+### analysis.py — Structural Analysis & Power Indices
+
+#### Structural utilities
+
+```python
+def incidence_matrix(net: PetriNet) -> np.ndarray
+```
+Compute the incidence matrix (rows=places, columns=transitions).
+
+```python
+def reachability_graph(net: PetriNet, initial_marking: Marking) -> TransitionSystem
+```
+Build the full reachability graph from an initial marking.
+
+```python
+def is_reachable_restricted(
+    net: PetriNet, im: Marking, fm: Marking,
+    allowed_transitions: set[PetriNet.Transition],
+) -> bool
+```
+BFS reachability check using only allowed transitions. Uses covering semantics (`m >= fm`).
+
+#### Coalition-based power indices
+
+```python
+def shapley_shubik(
+    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
+) -> dict[str, float]
+```
+Shapley-Shubik power index. `phi_i = sum_{S⊆N\{i}} [|S|!(n-|S|-1)!/n!] * (v(S∪{i}) - v(S))`.
+
+```python
+def banzhaf(
+    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
+    *, normalized: bool = True,
+) -> dict[str, float]
+```
+Banzhaf power index. Raw swing count normalized by default. `eta_i = sum_{S⊆N\{i}} (v(S∪{i}) - v(S))`.
+
+#### Path-based indices
+
+```python
+def usability(
+    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
+    *, normalized: bool = True, start_place: str | None = None,
+) -> dict[str, float]
+```
+Usability index via prefix-based shared credit. For each path of *k* transitions, considers *k+2* prefixes; credit per transition `= 1/(L * n_agents)`. Averaged across prefixes then paths. Optional `start_place` overrides initial marking.
+
+```python
+def gatekeeper(
+    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
+    *, normalized: bool = True,
+) -> dict[str, float]
+```
+Gatekeeper power index. Position weight `(L-p)/L` (earlier transitions weigh more), credit shared equally among capable agents. Summed across all simple paths.
+
+#### Internal helpers (not exported)
+
+- `_resolve_transitions(net, agent_mapping)` — map transition names to `Transition` objects
+- `_precompute_characteristic_function(net, im, fm, agent_mapping)` — enumerate all coalitions, compute characteristic function `v`
+- `_all_simple_paths(net, im, fm, *, start_place=None)` — DFS for all simple paths (no repeated markings)
 
 ## Conventions
 
-- Python 3.12+, managed with uv
-- Ruff for linting/formatting (line-length 99, rules: E, F, I, UP)
-- Petri net types come from `pm4py.objects.petri_net.obj` (PetriNet, Marking)
-- Experiment scripts use `from lib import ...` — the package is importable because it's declared in `pyproject.toml`
+- Python 3.12+, managed with `uv`
+- `ruff` for linting/formatting (line-length 99, rules: E, F, I, UP)
+- Petri net types from `pm4py.objects.petri_net.obj`
+- Experiment scripts use `from lib import ...` (package declared in `pyproject.toml`)
+- No tests yet; `tests/` directory is configured in pyproject.toml
