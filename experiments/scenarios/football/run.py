@@ -1,9 +1,11 @@
 """Football scenario: load, visualize, and compute power indices."""
 
+import argparse
 import base64
 import io
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import graphviz
@@ -12,8 +14,10 @@ from PIL import Image
 
 from lib import (
     banzhaf,
+    gatekeeper,
     load_pnml_stochastic,
     shapley_shubik,
+    usability,
 )
 
 SCENARIO_DIR = Path(__file__).parent
@@ -28,6 +32,22 @@ FORMATIONS = {
 
 # Zone ordering: left-to-right on the pitch
 ZONE_ORDER = ["Defense", "Midfield", "Attack", "Goal"]
+
+# Display labels for each power index: (markdown, latex)
+INDEX_LABELS: dict[str, tuple[str, str]] = {
+    "Shapley-Shubik": ("Shapley-Shubik", r"$\phi_{a_i}$"),
+    "Banzhaf": ("Banzhaf", r"$\beta_{a_i}$"),
+    "Usability": ("Usability", r"$U(a_i)$"),
+    "Gatekeeper": ("Gatekeeper", r"$G(a_i)$"),
+}
+
+
+def _index_label(name: str, fmt: str) -> str:
+    """Return the display label for an index name given the output format."""
+    col = 1 if fmt == "latex" else 0
+    if name in INDEX_LABELS:
+        return INDEX_LABELS[name][col]
+    return name
 
 
 def _build_dot(net, im, fm, smap) -> graphviz.Digraph:
@@ -51,8 +71,13 @@ def _build_dot(net, im, fm, smap) -> graphviz.Digraph:
         if p.name in initial_places:
             label += "\n\u25cf"
         dot.node(
-            p.name, label=label, shape=shape, width="0.8", fixedsize="false",
-            style="filled", fillcolor="white",
+            p.name,
+            label=label,
+            shape=shape,
+            width="0.8",
+            fixedsize="false",
+            style="filled",
+            fillcolor="white",
         )
 
     # Transitions
@@ -60,8 +85,11 @@ def _build_dot(net, im, fm, smap) -> graphviz.Digraph:
         w = weights.get(t.name, "")
         label = f"{t.name}\nw={w}"
         dot.node(
-            t.name, label=label, shape="box",
-            style="filled", fillcolor="#AAAAFF",
+            t.name,
+            label=label,
+            shape="box",
+            style="filled",
+            fillcolor="#AAAAFF",
         )
 
     # Edges
@@ -77,8 +105,12 @@ def _build_dot(net, im, fm, smap) -> graphviz.Digraph:
                 if a2.target == t_obj and a2.source in net.places:
                     input_place = a2.source.name
                     break
-            if (input_place and tgt in zone_rank and input_place in zone_rank
-                    and zone_rank[tgt] <= zone_rank[input_place]):
+            if (
+                input_place
+                and tgt in zone_rank
+                and input_place in zone_rank
+                and zone_rank[tgt] <= zone_rank[input_place]
+            ):
                 attrs["constraint"] = "false"
         dot.edge(src, tgt, **attrs)
 
@@ -137,7 +169,8 @@ def composite_with_background(
 
     # Extract the Petri net SVG dimensions (in pt) from the <svg> tag
     m = re.search(
-        r'<svg[^>]*\bwidth="([\d.]+)pt"[^>]*\bheight="([\d.]+)pt"', net_svg,
+        r'<svg[^>]*\bwidth="([\d.]+)pt"[^>]*\bheight="([\d.]+)pt"',
+        net_svg,
     )
     net_w_pt, net_h_pt = float(m.group(1)), float(m.group(2))
 
@@ -197,49 +230,151 @@ def build_agent_mapping(
     }
 
 
+def format_table_markdown(results: list[dict], index_names: list[str]) -> str:
+    """Format a consolidated markdown table across all formations."""
+    # Collect all role prefixes (D, M, A) — same across formations
+    role_prefixes = [prefix for prefix, _ in results[0]["roles"]]
+    col_headers = ["Formation", "Index"] + [f"{p}_i" for p in role_prefixes]
+
+    lines = []
+    lines.append("| " + " | ".join(col_headers) + " |")
+    aligns = ["---", "---"] + ["---:" for _ in role_prefixes]
+    lines.append("|" + "|".join(aligns) + "|")
+
+    for entry in results:
+        display_name = entry["formation"].removeprefix("1-")
+        first_row = True
+        for idx_name in index_names:
+            vals = entry["indices"][idx_name]
+            cells = [f"{vals[f'{p}1']:.4f}" for p in role_prefixes]
+            formation_cell = display_name if first_row else ""
+            label = _index_label(idx_name, "markdown")
+            lines.append(f"| {formation_cell} | {label} | " + " | ".join(cells) + " |")
+            first_row = False
+
+    return "\n".join(lines) + "\n"
+
+
+def format_table_latex(results: list[dict], index_names: list[str]) -> str:
+    """Format a consolidated LaTeX table across all formations."""
+    role_prefixes = [prefix for prefix, _ in results[0]["roles"]]
+    n_roles = len(role_prefixes)
+
+    lines = []
+    lines.append(r"\begin{tabular}{ll|" + "r" * n_roles + "}")
+    lines.append(r"\toprule")
+
+    role_headers = " & ".join(f"${p}_i$" for p in role_prefixes)
+    lines.append(r"Formation & Index & " + role_headers + r" \\")
+    lines.append(r"\midrule")
+
+    for i, entry in enumerate(results):
+        display_name = entry["formation"].removeprefix("1-")
+        first_row = True
+        for idx_name in index_names:
+            vals = entry["indices"][idx_name]
+            cells = " & ".join(f"{vals[f'{p}1']:.4f}" for p in role_prefixes)
+            formation_cell = display_name if first_row else ""
+            label = _index_label(idx_name, "latex")
+            lines.append(f"{formation_cell} & {label} & {cells}" + r" \\")
+            first_row = False
+        if i < len(results) - 1:
+            lines.append(r"\midrule")
+
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+
+    return "\n".join(lines) + "\n"
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Football scenario analysis")
+    parser.add_argument(
+        "--format",
+        choices=["markdown", "latex"],
+        default="markdown",
+        help="Output table format (default: markdown)",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Write table to file instead of stdout",
+    )
+    parser.add_argument(
+        "--skip-viz",
+        action="store_true",
+        help="Skip PNG/PDF rendering (faster iteration)",
+    )
+    args = parser.parse_args()
+
     net, im, fm, smap = load_pnml_stochastic(SCENARIO_DIR / "football.pnml")
 
-    print("Stochastic weights:")
+    print("Stochastic weights:", file=sys.stderr)
     for t, rv in sorted(smap.items(), key=lambda x: x[0].name):
-        print(f"  {t.name}: weight={rv.get_weight()}")
+        print(f"  {t.name}: weight={rv.get_weight()}", file=sys.stderr)
 
     output_dir = SCENARIO_DIR / "outputs"
     output_dir.mkdir(exist_ok=True)
 
-    # High-DPI raster
-    render_football_net(net, im, fm, smap, output_dir / "football.png")
-    print(f"Saved visualization to {output_dir / 'football.png'}")
+    if not args.skip_viz:
+        # High-DPI raster
+        render_football_net(net, im, fm, smap, output_dir / "football.png")
+        print(f"Saved visualization to {output_dir / 'football.png'}", file=sys.stderr)
 
-    # Composite: vector Petri net over faded background
-    bg_path = SCENARIO_DIR / "foosball.jpg"
-    if bg_path.exists():
-        net_svg = render_football_net_svg(net, im, fm, smap)
-        svg_path = output_dir / "football_overlay.svg"
-        composite_with_background(net_svg, bg_path, svg_path, bg_opacity=0.3)
-        # Convert to PDF (vector Petri net preserved)
-        pdf_path = output_dir / "football_overlay.pdf"
-        subprocess.run(
-            ["rsvg-convert", "-f", "pdf", str(svg_path), "-o", str(pdf_path)],
-            check=True,
-        )
-        svg_path.unlink()
-        print(f"Saved overlay to {pdf_path}")
+        # Composite: vector Petri net over faded background
+        bg_path = SCENARIO_DIR / "football.jpg"
+        if bg_path.exists():
+            net_svg = render_football_net_svg(net, im, fm, smap)
+            svg_path = output_dir / "football_overlay.svg"
+            composite_with_background(net_svg, bg_path, svg_path, bg_opacity=0.3)
+            # Convert to PDF (vector Petri net preserved)
+            pdf_path = output_dir / "football_overlay.pdf"
+            subprocess.run(
+                ["rsvg-convert", "-f", "pdf", str(svg_path), "-o", str(pdf_path)],
+                check=True,
+            )
+            svg_path.unlink()
+            print(f"Saved overlay to {pdf_path}", file=sys.stderr)
 
-    # Power indices for each formation
+    # Compute power indices for each formation
+    index_names = ["Shapley-Shubik", "Banzhaf", "Usability", "Gatekeeper"]
+    results: list[dict] = []
+
     for name, (n_def, n_mid, n_att) in FORMATIONS.items():
-        print(f"\n--- Formation {name} ({n_def}D-{n_mid}M-{n_att}A) ---")
+        print(f"Computing indices for {name}...", file=sys.stderr)
         agent_mapping = build_agent_mapping(n_def, n_mid, n_att)
 
-        ss = shapley_shubik(net, im, fm, agent_mapping)
-        bz = banzhaf(net, im, fm, agent_mapping)
+        indices = {
+            idx: fn(net, im, fm, agent_mapping)
+            for idx, fn in [
+                ("Shapley-Shubik", shapley_shubik),
+                ("Banzhaf", banzhaf),
+                ("Usability", usability),
+                ("Gatekeeper", gatekeeper),
+            ]
+        }
 
-        print("  Shapley-Shubik:")
-        for agent, val in sorted(ss.items()):
-            print(f"    {agent}: {val:.4f}")
-        print("  Banzhaf:")
-        for agent, val in sorted(bz.items()):
-            print(f"    {agent}: {val:.4f}")
+        results.append(
+            {
+                "formation": name,
+                "roles": [("D", n_def), ("M", n_mid), ("A", n_att)],
+                "indices": indices,
+            }
+        )
+
+    # Format and output table
+    if args.format == "latex":
+        table = format_table_latex(results, index_names)
+    else:
+        table = format_table_markdown(results, index_names)
+
+    if args.output:
+        args.output.write_text(table, encoding="utf-8")
+        print(f"Wrote table to {args.output}", file=sys.stderr)
+    else:
+        print(table)
 
 
 if __name__ == "__main__":
