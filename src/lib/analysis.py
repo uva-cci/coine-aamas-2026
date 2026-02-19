@@ -346,6 +346,38 @@ def gatekeeper_reach(
     return scores
 
 
+def gini_coefficient(values: list[float]) -> float:
+    """Gini coefficient of a distribution (0 = equal, 1 = maximally unequal)."""
+    n = len(values)
+    if n == 0:
+        return 0.0
+    total = sum(values)
+    if total == 0:
+        return 0.0
+    sorted_vals = sorted(values)
+    cumulative = 0.0
+    weighted_sum = 0.0
+    for i, v in enumerate(sorted_vals):
+        cumulative += v
+        weighted_sum += (2 * (i + 1) - n - 1) * v
+    return weighted_sum / (n * total)
+
+
+def granularity(agent_mapping: AgentMapping) -> float:
+    """Gini index of the supply-degree distribution across transitions.
+
+    supply degree deg(t) = |agent_mapping[t]|  (number of agents that can fire t)
+    supply share  p_s(t) = deg(t) / sum(deg)
+    granularity   = gini_coefficient([p_s(t) for all t])
+    """
+    degrees = [float(len(agents)) for agents in agent_mapping.values()]
+    total = sum(degrees)
+    if total == 0:
+        return 0.0
+    shares = [d / total for d in degrees]
+    return gini_coefficient(shares)
+
+
 def banzhaf(
     net: PetriNet,
     im: Marking,

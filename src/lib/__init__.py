@@ -4,6 +4,8 @@ from lib.analysis import (
     banzhaf,
     gatekeeper,
     gatekeeper_reach,
+    gini_coefficient,
+    granularity,
     incidence_matrix,
     is_reachable_restricted,
     reachability_graph,
@@ -11,17 +13,36 @@ from lib.analysis import (
     usability,
 )
 from lib.io import load_pnml, load_pnml_stochastic
-from lib.viz import build_stochastic_decorations, save_net_png
+from lib.viz import (
+    build_stochastic_decorations,
+    plot_granularity_scatter,
+    plot_index_correlation,
+    plot_lorenz_curves,
+    plot_power_bars,
+    plot_power_deltas,
+    plot_power_heatmap,
+    plot_rank_agreement,
+    save_net_png,
+)
 
 __all__ = [
     "banzhaf",
     "build_stochastic_decorations",
     "gatekeeper",
     "gatekeeper_reach",
+    "gini_coefficient",
+    "granularity",
     "incidence_matrix",
     "is_reachable_restricted",
     "load_pnml",
     "load_pnml_stochastic",
+    "plot_granularity_scatter",
+    "plot_index_correlation",
+    "plot_lorenz_curves",
+    "plot_power_bars",
+    "plot_power_deltas",
+    "plot_power_heatmap",
+    "plot_rank_agreement",
     "reachability_graph",
     "save_net_png",
     "shapley_shubik",
