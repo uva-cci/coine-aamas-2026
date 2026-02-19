@@ -6,6 +6,7 @@ import io
 import re
 import subprocess
 import sys
+from functools import partial
 from pathlib import Path
 
 import graphviz
@@ -351,7 +352,7 @@ def main() -> None:
             for idx, fn in [
                 ("Shapley-Shubik", shapley_shubik),
                 ("Banzhaf", banzhaf),
-                ("Usability", usability),
+                ("Usability", partial(usability, start_place="Defense")),
                 ("Gatekeeper", gatekeeper),
             ]
         }

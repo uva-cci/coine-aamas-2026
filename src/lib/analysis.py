@@ -135,6 +135,155 @@ def shapley_shubik(
     return phi
 
 
+def _all_simple_paths(
+    net: PetriNet,
+    im: Marking,
+    fm: Marking,
+    *,
+    start_place: str | None = None,
+) -> list[list[str]]:
+    """Find all simple paths (no repeated markings) from *im* to *fm*.
+
+    Returns a list of paths, where each path is a list of transition names.
+    Uses covering semantics: a marking *m* satisfies the goal when m >= fm.
+
+    When *start_place* is given, the search starts from a single-token marking
+    in that place instead of *im*.
+    """
+    if start_place is not None:
+        place_obj = next((p for p in net.places if p.name == start_place), None)
+        if place_obj is None:
+            raise KeyError(f"Place '{start_place}' not found in net")
+        im = Marking({place_obj: 1})
+
+    def _covers(m: Marking) -> bool:
+        return all(m.get(p, 0) >= fm[p] for p in fm)
+
+    paths: list[list[str]] = []
+
+    def _dfs(marking: Marking, path: list[str], visited: set[Marking]):
+        if _covers(marking):
+            paths.append(list(path))
+            return
+        for t in pn_semantics.enabled_transitions(net, marking):
+            new_marking = pn_semantics.execute(t, net, marking)
+            if new_marking not in visited:
+                visited.add(new_marking)
+                path.append(t.name)
+                _dfs(new_marking, path, visited)
+                path.pop()
+                visited.discard(new_marking)
+
+    _dfs(im, [], {im})
+    return paths
+
+
+def usability(
+    net: PetriNet,
+    im: Marking,
+    fm: Marking,
+    agent_mapping: AgentMapping,
+    *,
+    normalized: bool = True,
+    start_place: str | None = None,
+) -> dict[str, float]:
+    """Compute the usability index for each agent using prefix-based credit.
+
+    For each path of *k* transitions, consider *k + 2* prefixes (lengths 0
+    through *k + 1*).  For each non-empty prefix of length *L*, every
+    transition *j* (j < min(L, k)) contributes ``1 / (L * n_agents_j)`` to
+    each agent that can fire it.  The extra prefix at length *k + 1* dilutes
+    earlier agents' credit by accounting for reaching the final marking.
+
+    Scores are averaged across prefixes, then across paths.
+
+    When *normalized* is True (default), scores are rescaled to sum to 1.
+
+    When *start_place* is given, paths are enumerated from a single-token
+    marking in that place instead of *im*.
+    """
+    agents = sorted({a for s in agent_mapping.values() for a in s})
+    paths = _all_simple_paths(net, im, fm, start_place=start_place)
+
+    if not paths:
+        return {a: 0.0 for a in agents}
+
+    scores: dict[str, float] = {a: 0.0 for a in agents}
+    for path in paths:
+        k = len(path)
+        n_prefixes = k + 2  # prefix lengths 0 through k+1
+        path_scores: dict[str, float] = {a: 0.0 for a in agents}
+
+        for prefix_len in range(1, k + 2):  # prefix lengths 1..k+1
+            for j in range(min(prefix_len, k)):  # transitions 0..min(L-1, k-1)
+                t_name = path[j]
+                zone_agents = agent_mapping.get(t_name, set())
+                n_zone = len(zone_agents)
+                if n_zone > 0:
+                    credit = 1.0 / (prefix_len * n_zone)
+                    for a in zone_agents:
+                        path_scores[a] += credit
+
+        for a in agents:
+            scores[a] += path_scores[a] / n_prefixes
+
+    # Average across paths
+    n_paths = len(paths)
+    scores = {a: v / n_paths for a, v in scores.items()}
+
+    if normalized:
+        total = sum(scores.values())
+        if total > 0:
+            scores = {a: v / total for a, v in scores.items()}
+
+    return scores
+
+
+def gatekeeper(
+    net: PetriNet,
+    im: Marking,
+    fm: Marking,
+    agent_mapping: AgentMapping,
+    *,
+    normalized: bool = True,
+) -> dict[str, float]:
+    """Compute the gatekeeper power index for each agent.
+
+    For each transition at position *p* in a path of length *L*:
+    - Position weight: (L − p) / L  (earlier transitions weigh more)
+    - Credit is shared equally among the *k* agents that can fire the transition
+
+    Each agent's contribution per transition: (L − p) / (L · k).
+    Scores are summed across all paths.
+
+    When *normalized* is True (default), scores are rescaled to sum to 1.
+    """
+    agents = sorted({a for s in agent_mapping.values() for a in s})
+    paths = _all_simple_paths(net, im, fm)
+
+    if not paths:
+        return {a: 0.0 for a in agents}
+
+    scores: dict[str, float] = {a: 0.0 for a in agents}
+    for path in paths:
+        path_len = len(path)
+        for position, t_name in enumerate(path):
+            position_weight = (path_len - position) / path_len
+            capable = agent_mapping.get(t_name, set())
+            n_capable = len(capable)
+            if n_capable > 0:
+                contribution = position_weight / n_capable
+                for agent in capable:
+                    scores[agent] += contribution
+
+    if normalized:
+        total = sum(scores.values())
+        if total > 0:
+            scores = {a: v / total for a, v in scores.items()}
+
+    return scores
+
+
 def banzhaf(
     net: PetriNet,
     im: Marking,
