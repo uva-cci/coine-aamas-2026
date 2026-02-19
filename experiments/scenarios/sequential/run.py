@@ -5,7 +5,24 @@ import sys
 from functools import partial
 from pathlib import Path
 
-from lib import banzhaf, gatekeeper, load_pnml, shapley_shubik, usability
+from statistics import median
+
+from lib import (
+    banzhaf,
+    gatekeeper,
+    gini_coefficient,
+    granularity,
+    load_pnml,
+    plot_granularity_scatter,
+    plot_index_correlation,
+    plot_lorenz_curves,
+    plot_power_bars,
+    plot_power_deltas,
+    plot_power_heatmap,
+    plot_rank_agreement,
+    shapley_shubik,
+    usability,
+)
 
 SCENARIO_DIR = Path(__file__).parent
 
@@ -133,6 +150,16 @@ def format_scores_latex(results: list[tuple[str, dict]]) -> str:
             parts.append(" & ".join(f"{vals[a]:.4f}" for a in AGENTS))
         lines.append(f"{idx_lbl} & " + " & ".join(parts) + r" \\")
 
+    # Granularity row: one value per config, spanning all agent columns
+    gran_parts = []
+    for cfg_name, scores in results:
+        g = scores["Granularity"]
+        gran_parts.append(
+            rf"\multicolumn{{{n_a}}}{{c}}{{{g:.4f}}}"
+        )
+    lines.append(r"\hline")
+    lines.append(r"$\mathcal{G}$ & " + " & ".join(gran_parts) + r" \\")
+
     lines += [
         r"\hline",
         r"\end{tabular}",
@@ -161,6 +188,14 @@ def format_scores_markdown(results: list[tuple[str, dict]]) -> str:
             vals = scores[idx_name]
             cells.extend(f"{vals[a]:.4f}" for a in AGENTS)
         lines.append(f"| {idx_name} | " + " | ".join(cells) + " |")
+
+    # Granularity row
+    gran_cells = []
+    for _, scores in results:
+        g = scores["Granularity"]
+        gran_cells.append(f"{g:.4f}")
+        gran_cells.extend("" for _ in AGENTS[1:])
+    lines.append(f"| Granularity | " + " | ".join(gran_cells) + " |")
     return "\n".join(lines) + "\n"
 
 
@@ -179,6 +214,17 @@ def main() -> None:
         default=None,
         help="Write tables to file instead of stdout",
     )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Generate granularity vs inequality plot",
+    )
+    parser.add_argument(
+        "--plot-format",
+        choices=["pdf", "png"],
+        default="pdf",
+        help="Plot output format (default: pdf)",
+    )
     args = parser.parse_args()
 
     net, im, fm = load_pnml(SCENARIO_DIR / "sequential.pnml")
@@ -187,6 +233,7 @@ def main() -> None:
     for name, agent_mapping in CONFIGS.items():
         print(f"Computing indices for {name}...", file=sys.stderr)
         scores = {idx_name: fn(net, im, fm, agent_mapping) for idx_name, _, fn in INDEX_SPECS}
+        scores["Granularity"] = granularity(agent_mapping)
         results.append((name, scores))
 
     if args.format == "latex":
@@ -199,6 +246,61 @@ def main() -> None:
         print(f"Wrote tables to {args.output}", file=sys.stderr)
     else:
         print(output)
+
+    if args.plot:
+        labels = [name for name, _ in results]
+        grans = [scores["Granularity"] for _, scores in results]
+        out_dir = SCENARIO_DIR / "outputs"
+        out_dir.mkdir(exist_ok=True)
+        ext = args.plot_format
+
+        # Scatter plots: median and Gini vs granularity
+        for stat_name, stat_fn, ylabel in [
+            ("median_power", lambda v: median(v), "Median Power"),
+            ("gini_power", lambda v: gini_coefficient(list(v)), "Power Inequality (Gini)"),
+        ]:
+            series: dict[str, list[float]] = {}
+            for idx_name, _, _ in INDEX_SPECS:
+                series[idx_name] = [
+                    stat_fn(scores[idx_name].values()) for _, scores in results
+                ]
+            path = out_dir / f"granularity_vs_{stat_name}.{ext}"
+            plot_granularity_scatter(labels, grans, series, path,
+                                     title=f"Sequential: Granularity vs {ylabel}",
+                                     ylabel=ylabel)
+            print(f"Saved plot to {path}", file=sys.stderr)
+
+        # Shared data for remaining plots
+        agent_labels = [f"$a_{a}$" for a in AGENTS]
+        index_powers: dict[str, list[list[float]]] = {}
+        for idx_name, _, _ in INDEX_SPECS:
+            index_powers[idx_name] = [
+                [scores[idx_name][a] for a in AGENTS] for _, scores in results
+            ]
+
+        for name, fn in [
+            ("power_bars", lambda p: plot_power_bars(
+                labels, agent_labels, index_powers, p,
+                title="Sequential: Power per Agent")),
+            ("index_correlation", lambda p: plot_index_correlation(
+                labels, agent_labels, index_powers, p,
+                title="Sequential: Index Correlation")),
+            ("power_heatmap", lambda p: plot_power_heatmap(
+                labels, agent_labels, index_powers, p,
+                title="Sequential: Power Heatmap")),
+            ("lorenz_curves", lambda p: plot_lorenz_curves(
+                labels, index_powers, p,
+                title="Sequential: Lorenz Curves")),
+            ("rank_agreement", lambda p: plot_rank_agreement(
+                labels, index_powers, p,
+                title="Sequential: Rank Agreement")),
+            ("power_deltas", lambda p: plot_power_deltas(
+                labels, agent_labels, index_powers, p, baseline_idx=0,
+                title="Sequential: Power Deltas from Even")),
+        ]:
+            path = out_dir / f"{name}.{ext}"
+            fn(path)
+            print(f"Saved plot to {path}", file=sys.stderr)
 
 
 if __name__ == "__main__":

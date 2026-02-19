@@ -13,10 +13,21 @@ import graphviz
 import numpy as np
 from PIL import Image
 
+from statistics import median
+
 from lib import (
     banzhaf,
     gatekeeper,
+    gini_coefficient,
+    granularity,
     load_pnml_stochastic,
+    plot_granularity_scatter,
+    plot_index_correlation,
+    plot_lorenz_curves,
+    plot_power_bars,
+    plot_power_deltas,
+    plot_power_heatmap,
+    plot_rank_agreement,
     shapley_shubik,
     usability,
 )
@@ -254,6 +265,13 @@ def format_table_markdown(results: list[dict], index_names: list[str]) -> str:
             cells.extend(f"{vals[f'{p}1']:.4f}" for p in role_prefixes)
         lines.append(f"| {label} | " + " | ".join(cells) + " |")
 
+    # Granularity row
+    gran_cells = []
+    for entry in results:
+        gran_cells.append(f"{entry['granularity']:.4f}")
+        gran_cells.extend("" for _ in role_prefixes[1:])
+    lines.append(f"| Granularity | " + " | ".join(gran_cells) + " |")
+
     return "\n".join(lines) + "\n"
 
 
@@ -284,6 +302,15 @@ def format_table_latex(results: list[dict], index_names: list[str]) -> str:
             parts.append(" & ".join(f"{vals[f'{p}1']:.4f}" for p in role_prefixes))
         lines.append(f"{label} & " + " & ".join(parts) + r" \\")
 
+    # Granularity row
+    gran_parts = []
+    for entry in results:
+        gran_parts.append(
+            rf"\multicolumn{{{n_roles}}}{{c}}{{{entry['granularity']:.4f}}}"
+        )
+    lines.append(r"\midrule")
+    lines.append(r"$\mathcal{G}$ & " + " & ".join(gran_parts) + r" \\")
+
     lines += [r"\bottomrule", r"\end{tabular}"]
 
     return "\n".join(lines) + "\n"
@@ -308,6 +335,17 @@ def main() -> None:
         "--skip-viz",
         action="store_true",
         help="Skip PNG/PDF rendering (faster iteration)",
+    )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Generate granularity vs inequality plot",
+    )
+    parser.add_argument(
+        "--plot-format",
+        choices=["pdf", "png"],
+        default="pdf",
+        help="Plot output format (default: pdf)",
     )
     args = parser.parse_args()
 
@@ -363,6 +401,7 @@ def main() -> None:
                 "formation": name,
                 "roles": [("D", n_def), ("M", n_mid), ("A", n_att)],
                 "indices": indices,
+                "granularity": granularity(agent_mapping),
             }
         )
 
@@ -377,6 +416,61 @@ def main() -> None:
         print(f"Wrote table to {args.output}", file=sys.stderr)
     else:
         print(table)
+
+    if args.plot:
+        labels = [e["formation"].removeprefix("1-") for e in results]
+        grans = [e["granularity"] for e in results]
+        ext = args.plot_format
+
+        # Scatter plots: median and Gini vs granularity
+        for stat_name, stat_fn, ylabel in [
+            ("median_power", lambda v: median(v), "Median Power"),
+            ("gini_power", lambda v: gini_coefficient(list(v)), "Power Inequality (Gini)"),
+        ]:
+            series: dict[str, list[float]] = {}
+            for idx_name in index_names:
+                series[idx_name] = [
+                    stat_fn(e["indices"][idx_name].values()) for e in results
+                ]
+            path = output_dir / f"granularity_vs_{stat_name}.{ext}"
+            plot_granularity_scatter(labels, grans, series, path,
+                                     title=f"Football: Granularity vs {ylabel}",
+                                     ylabel=ylabel)
+            print(f"Saved plot to {path}", file=sys.stderr)
+
+        # Shared data for remaining plots (one representative per role)
+        role_prefixes = ["D", "M", "A"]
+        agent_labels = [f"${p}_i$" for p in role_prefixes]
+        index_powers: dict[str, list[list[float]]] = {}
+        for idx_name in index_names:
+            index_powers[idx_name] = [
+                [e["indices"][idx_name][f"{p}1"] for p in role_prefixes]
+                for e in results
+            ]
+
+        for name, fn in [
+            ("power_bars", lambda p: plot_power_bars(
+                labels, agent_labels, index_powers, p,
+                title="Football: Power per Role")),
+            ("index_correlation", lambda p: plot_index_correlation(
+                labels, agent_labels, index_powers, p,
+                title="Football: Index Correlation")),
+            ("power_heatmap", lambda p: plot_power_heatmap(
+                labels, agent_labels, index_powers, p,
+                title="Football: Power Heatmap")),
+            ("lorenz_curves", lambda p: plot_lorenz_curves(
+                labels, index_powers, p,
+                title="Football: Lorenz Curves")),
+            ("rank_agreement", lambda p: plot_rank_agreement(
+                labels, index_powers, p,
+                title="Football: Rank Agreement")),
+            ("power_deltas", lambda p: plot_power_deltas(
+                labels, agent_labels, index_powers, p, baseline_idx=0,
+                title="Football: Power Deltas from 2-5-3")),
+        ]:
+            path = output_dir / f"{name}.{ext}"
+            fn(path)
+            print(f"Saved plot to {path}", file=sys.stderr)
 
 
 if __name__ == "__main__":
