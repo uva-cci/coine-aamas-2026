@@ -69,6 +69,8 @@ Load a Petri net with stochastic information. Returns `(net, im, fm, stochastic_
 
 ### viz.py — Visualization
 
+#### Petri net rendering
+
 ```python
 def build_stochastic_decorations(stochastic_map: dict[Any, Any]) -> dict[Any, dict[str, str]]
 ```
@@ -82,7 +84,68 @@ def save_net_png(
 ```
 Save a Petri net visualization as PNG.
 
-### analysis.py — Structural Analysis & Power Indices
+#### Comparative plot helpers
+
+All plot functions below share a common signature pattern for multi-config, multi-agent, multi-index data:
+
+- `config_labels: list[str]` — label per configuration
+- `agent_labels: list[str]` — label per agent
+- `index_powers: dict[str, list[list[float]]]` — `{index_name: [[power per agent] per config]}`
+- `output_path: Path` — destination PNG
+- `title: str = ""` — optional figure title
+
+```python
+def plot_power_bars(
+    config_labels, agent_labels, index_powers, output_path, title="",
+) -> None
+```
+Grouped bar chart of per-agent power across configurations (one subplot per index).
+
+```python
+def plot_power_heatmap(
+    config_labels, agent_labels, index_powers, output_path, title="",
+) -> None
+```
+Heatmap grid (rows = configs, columns = agents, color = power value; one subplot per index).
+
+```python
+def plot_index_correlation(
+    config_labels, agent_labels, index_powers, output_path, title="",
+) -> None
+```
+Pairwise scatter plots of index values; each point is one agent in one config, colored by configuration.
+
+```python
+def plot_lorenz_curves(
+    config_labels, index_powers, output_path, title="",
+) -> None
+```
+Lorenz curves per config (one subplot per index). Curves closer to the diagonal indicate more equal distribution.
+
+```python
+def plot_rank_agreement(
+    config_labels, index_powers, output_path, title="",
+) -> None
+```
+Spearman rank-correlation heatmaps between indices (one subplot per config).
+
+```python
+def plot_power_deltas(
+    config_labels, agent_labels, index_powers, output_path,
+    baseline_idx: int = 0, title="",
+) -> None
+```
+Bar chart of power change from a baseline config for each agent and each index.
+
+```python
+def plot_granularity_scatter(
+    labels, granularities: list[float], index_values: dict[str, list[float]],
+    output_path, title="", ylabel="",
+) -> None
+```
+Scatter plot of granularity (x-axis) vs per-index summary statistics (y-axis) with point annotations.
+
+### analysis.py — Structural Analysis, Power Indices & Distributional Metrics
 
 #### Structural utilities
 
@@ -146,6 +209,26 @@ def gatekeeper_reach(
 ) -> dict[str, float]
 ```
 Reachability-weighted gatekeeper variant. Weight = `|R(m')|` (number of markings reachable from the marking after firing the transition). Replaces the positional `(L-p)/L` proxy with actual forward-reachability set size. Credit shared equally among capable agents, summed across all simple paths.
+
+```python
+def participation(
+    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
+    *, normalized: bool = True, start_place: str | None = None,
+) -> dict[str, float]
+```
+Participation index — average fraction of transitions each agent can fire across all simple paths. Simpler alternative to usability.
+
+#### Distributional metrics
+
+```python
+def gini_coefficient(values: list[float]) -> float
+```
+Gini coefficient of a distribution (0 = perfectly equal, 1 = maximally unequal).
+
+```python
+def granularity(agent_mapping: AgentMapping) -> float
+```
+Gini index of the supply-degree distribution across transitions (how unevenly agents are distributed).
 
 #### Internal helpers (not exported)
 
