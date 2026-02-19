@@ -232,58 +232,59 @@ def build_agent_mapping(
 
 
 def format_table_markdown(results: list[dict], index_names: list[str]) -> str:
-    """Format a consolidated markdown table across all formations."""
-    # Collect all role prefixes (D, M, A) — same across formations
+    """Format a markdown table (indices on rows, formations on columns)."""
     role_prefixes = [prefix for prefix, _ in results[0]["roles"]]
-    col_headers = ["Formation", "Index"] + [f"{p}_i" for p in role_prefixes]
 
-    lines = []
-    lines.append("| " + " | ".join(col_headers) + " |")
-    aligns = ["---", "---"] + ["---:" for _ in role_prefixes]
-    lines.append("|" + "|".join(aligns) + "|")
-
+    header_parts = ["Index"]
     for entry in results:
         display_name = entry["formation"].removeprefix("1-")
-        first_row = True
-        for idx_name in index_names:
+        for p in role_prefixes:
+            header_parts.append(f"{display_name} {p}_i")
+
+    lines = [
+        "| " + " | ".join(header_parts) + " |",
+        "|---|" + "|".join("---:" for _ in header_parts[1:]) + "|",
+    ]
+
+    for idx_name in index_names:
+        label = _index_label(idx_name, "markdown")
+        cells = []
+        for entry in results:
             vals = entry["indices"][idx_name]
-            cells = [f"{vals[f'{p}1']:.4f}" for p in role_prefixes]
-            formation_cell = display_name if first_row else ""
-            label = _index_label(idx_name, "markdown")
-            lines.append(f"| {formation_cell} | {label} | " + " | ".join(cells) + " |")
-            first_row = False
+            cells.extend(f"{vals[f'{p}1']:.4f}" for p in role_prefixes)
+        lines.append(f"| {label} | " + " | ".join(cells) + " |")
 
     return "\n".join(lines) + "\n"
 
 
 def format_table_latex(results: list[dict], index_names: list[str]) -> str:
-    """Format a consolidated LaTeX table across all formations."""
+    """Format a LaTeX table (indices on rows, formations on columns)."""
     role_prefixes = [prefix for prefix, _ in results[0]["roles"]]
     n_roles = len(role_prefixes)
-
-    lines = []
-    lines.append(r"\begin{tabular}{ll|" + "r" * n_roles + "}")
-    lines.append(r"\toprule")
-
+    col_groups = " || ".join("c" * n_roles for _ in results)
+    multi = " & ".join(
+        rf"\multicolumn{{{n_roles}}}{{c}}{{{entry['formation'].removeprefix('1-')}}}"
+        for entry in results
+    )
     role_headers = " & ".join(f"${p}_i$" for p in role_prefixes)
-    lines.append(r"Formation & Index & " + role_headers + r" \\")
-    lines.append(r"\midrule")
+    sub_header = " & ".join(role_headers for _ in results)
 
-    for i, entry in enumerate(results):
-        display_name = entry["formation"].removeprefix("1-")
-        first_row = True
-        for idx_name in index_names:
+    lines = [
+        rf"\begin{{tabular}}{{l {col_groups}}}",
+        r"\toprule",
+        f"& {multi}" + r" \\",
+        f"& {sub_header}" + r" \\ \midrule",
+    ]
+
+    for idx_name in index_names:
+        label = _index_label(idx_name, "latex")
+        parts = []
+        for entry in results:
             vals = entry["indices"][idx_name]
-            cells = " & ".join(f"{vals[f'{p}1']:.4f}" for p in role_prefixes)
-            formation_cell = display_name if first_row else ""
-            label = _index_label(idx_name, "latex")
-            lines.append(f"{formation_cell} & {label} & {cells}" + r" \\")
-            first_row = False
-        if i < len(results) - 1:
-            lines.append(r"\midrule")
+            parts.append(" & ".join(f"{vals[f'{p}1']:.4f}" for p in role_prefixes))
+        lines.append(f"{label} & " + " & ".join(parts) + r" \\")
 
-    lines.append(r"\bottomrule")
-    lines.append(r"\end{tabular}")
+    lines += [r"\bottomrule", r"\end{tabular}"]
 
     return "\n".join(lines) + "\n"
 
