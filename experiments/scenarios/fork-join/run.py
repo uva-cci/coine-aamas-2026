@@ -105,13 +105,15 @@ def format_distribution_markdown() -> str:
 
 
 def format_scores_latex(results: list[tuple[str, dict]]) -> str:
-    """Power index scores as LaTeX table."""
+    """Power index scores as LaTeX table (indices on rows, configs on columns)."""
     n_a = len(AGENTS)
-    col_groups = " || ".join("c" * n_a for _ in INDEX_SPECS)
+    col_groups = " || ".join("c" * n_a for _ in results)
 
-    multi = " & ".join(rf"\multicolumn{{{n_a}}}{{c}}{{{lbl}}}" for _, lbl, _ in INDEX_SPECS)
+    multi = " & ".join(
+        rf"\multicolumn{{{n_a}}}{{c}}{{{cfg_name}}}" for cfg_name, _ in results
+    )
     agent_cols = " & ".join(f"$a_{a}$" for a in AGENTS)
-    sub_header = " & ".join(agent_cols for _ in INDEX_SPECS)
+    sub_header = " & ".join(agent_cols for _ in results)
 
     lines = [
         r"\begin{table}[ht!]",
@@ -119,15 +121,15 @@ def format_scores_latex(results: list[tuple[str, dict]]) -> str:
         rf"\begin{{tabular}}{{l {col_groups}}}",
         r"\hline",
         f"& {multi}" + r" \\",
-        f"$A$ & {sub_header}" + r" \\ \hline",
+        f"& {sub_header}" + r" \\ \hline",
     ]
 
-    for cfg_name, scores in results:
+    for idx_name, idx_lbl, _ in INDEX_SPECS:
         parts = []
-        for idx_name, _, _ in INDEX_SPECS:
+        for _, scores in results:
             vals = scores[idx_name]
             parts.append(" & ".join(f"{vals[a]:.4f}" for a in AGENTS))
-        lines.append(f"{cfg_name} & " + " & ".join(parts) + r" \\")
+        lines.append(f"{idx_lbl} & " + " & ".join(parts) + r" \\")
 
     lines += [
         r"\hline",
@@ -140,23 +142,23 @@ def format_scores_latex(results: list[tuple[str, dict]]) -> str:
 
 
 def format_scores_markdown(results: list[tuple[str, dict]]) -> str:
-    """Power index scores as markdown table."""
-    header_parts = ["A"]
-    for idx_name, _, _ in INDEX_SPECS:
+    """Power index scores as markdown table (indices on rows, configs on columns)."""
+    header_parts = ["Index"]
+    for cfg_name, _ in results:
         for a in AGENTS:
-            header_parts.append(f"{idx_name} a{a}")
+            header_parts.append(f"{cfg_name} a{a}")
 
     lines = [
         "| " + " | ".join(header_parts) + " |",
         "|---|" + "|".join("---:" for _ in header_parts[1:]) + "|",
     ]
 
-    for cfg_name, scores in results:
+    for idx_name, _, _ in INDEX_SPECS:
         cells = []
-        for idx_name, _, _ in INDEX_SPECS:
+        for _, scores in results:
             vals = scores[idx_name]
             cells.extend(f"{vals[a]:.4f}" for a in AGENTS)
-        lines.append(f"| {cfg_name} | " + " | ".join(cells) + " |")
+        lines.append(f"| {idx_name} | " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
 
 
