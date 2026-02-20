@@ -135,6 +135,38 @@ def shapley_shubik(
     return phi
 
 
+def shapley_shubik_from_values(
+    agents: list[str],
+    v: dict[frozenset[str], float],
+) -> dict[str, float]:
+    """Shapley-Shubik index from a pre-computed characteristic function.
+
+    Like :func:`shapley_shubik` but accepts a continuous-valued *v* mapping
+    coalitions to real numbers in [0, 1] instead of binary reachability.
+    """
+    n = len(agents)
+    n_fact = factorial(n)
+    phi: dict[str, float] = {}
+
+    for i in agents:
+        total = 0.0
+        others = [a for a in agents if a != i]
+        for size in range(n):
+            weight = factorial(size) * factorial(n - size - 1) / n_fact
+            for combo in combinations(others, size):
+                s = frozenset(combo)
+                s_with_i = s | {i}
+                total += weight * (v[s_with_i] - v[s])
+        phi[i] = total
+
+    # Normalize to sum to 1
+    total_phi = sum(phi.values())
+    if total_phi > 0:
+        phi = {a: val / total_phi for a, val in phi.items()}
+
+    return phi
+
+
 def _all_simple_paths(
     net: PetriNet,
     im: Marking,
@@ -526,3 +558,36 @@ def banzhaf(
     if total == 0:
         return {a: 0.0 for a in agents}
     return {a: c / total for a, c in eta.items()}
+
+
+def banzhaf_from_values(
+    agents: list[str],
+    v: dict[frozenset[str], float],
+    *,
+    normalized: bool = True,
+) -> dict[str, float]:
+    """Banzhaf index from a pre-computed characteristic function.
+
+    Like :func:`banzhaf` but accepts a continuous-valued *v* mapping
+    coalitions to real numbers in [0, 1] instead of binary reachability.
+    """
+    n = len(agents)
+    raw: dict[str, float] = {}
+
+    for i in agents:
+        total = 0.0
+        others = [a for a in agents if a != i]
+        for size in range(n):
+            for combo in combinations(others, size):
+                s = frozenset(combo)
+                s_with_i = s | {i}
+                total += v[s_with_i] - v[s]
+        raw[i] = total
+
+    if not normalized:
+        return raw
+
+    total = sum(raw.values())
+    if total == 0:
+        return {a: 0.0 for a in agents}
+    return {a: val / total for a, val in raw.items()}

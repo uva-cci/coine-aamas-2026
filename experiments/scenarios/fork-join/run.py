@@ -51,10 +51,10 @@ CONFIGS: dict[str, dict[str, set[str]]] = {
 }
 
 INDEX_SPECS = [
-    ("Shapley-Shubik", r"$\phi_{a_i}$", shapley_shubik),
-    ("Banzhaf", r"$\beta_{a_i}$", banzhaf),
     ("Usability", r"$U(a_i)$", partial(usability, start_place="p0")),
     ("Gatekeeper", r"$G(a_i)$", gatekeeper),
+    ("Shapley-Shubik", r"$\phi_{a_i}$", shapley_shubik),
+    ("Banzhaf", r"$\beta_{a_i}$", banzhaf),
 ]
 
 

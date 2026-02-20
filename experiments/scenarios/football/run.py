@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 from functools import partial
+from itertools import combinations
 from pathlib import Path
 from statistics import median
 
@@ -16,6 +17,7 @@ from PIL import Image
 
 from lib import (
     banzhaf,
+    banzhaf_from_values,
     gatekeeper,
     gini_coefficient,
     granularity,
@@ -28,6 +30,7 @@ from lib import (
     plot_power_heatmap,
     plot_rank_agreement,
     shapley_shubik,
+    shapley_shubik_from_values,
     usability,
 )
 
@@ -39,20 +42,96 @@ FORMATIONS = {
     "1-4-4-2": (4, 4, 2),
     "1-3-5-2": (3, 5, 2),
     "1-4-3-3": (4, 3, 3),
+    "1-1-1-1": (1, 1, 1),
+    "1-4-4-4": (4, 4, 4),
 }
 
 # Zone ordering: left-to-right on the pitch
 ZONE_ORDER = ["Defense", "Midfield", "Attack", "Goal"]
 
+# Stochastic model parameters (must match generate_pnml.py)
+M = 10  # cells per zone
+P_GOAL = 3  # goal width in cells
+GAMMA = 0.99  # discount factor for stochastic CF
+
 # Display labels for each power index: (markdown, latex)
 INDEX_LABELS: dict[str, tuple[str, str]] = {
     "Shapley-Shubik": ("Shapley-Shubik", r"$\phi_{a_i}$"),
     "Banzhaf": ("Banzhaf", r"$\beta_{a_i}$"),
+    "Stoch. Shapley": ("Stoch. Shapley", r"$\phi^s_{a_i}$"),
+    "Stoch. Banzhaf": ("Stoch. Banzhaf", r"$\beta^s_{a_i}$"),
     "Usability": ("Usability", r"$U(a_i)$"),
     "Participation": ("Participation", r"$P(a_i)$"),
     "Gatekeeper": ("Gatekeeper", r"$G(a_i)$"),
     "Gatekeeper-Reach": ("Gatekeeper-Reach", r"$G^R(a_i)$"),
 }
+
+
+def stochastic_value(
+    d: int, m: int, a: int, M: int, P_GOAL: int, gamma: float
+) -> float:
+    """Expected discounted hitting time E[gamma^T] for a 3-state absorbing chain.
+
+    States: Defense (0), Midfield (1), Attack (2) → Goal (absorbing).
+    Each transition probability is the geometric mean of the passer and
+    receiver contributions, so all three roles affect the chain:
+      Defense→Midfield:  sqrt(d·m) / M
+      Midfield→Attack:   sqrt(m·a) / M
+      Attack→Goal:       sqrt(a·P_GOAL) / M
+    Fail transitions loop back to Defense.
+
+    Returns 0.0 if any role is missing from the coalition.
+    """
+    if d == 0 or m == 0 or a == 0:
+        return 0.0
+
+    p1 = (d * m) ** 0.5 / M  # Defense → Midfield
+    p2 = (m * a) ** 0.5 / M  # Midfield → Attack
+    p3 = (a * P_GOAL) ** 0.5 / M  # Attack → Goal
+
+    # Solve V = gamma * P * V + gamma * p_absorb for each state.
+    # V[0] = gamma * (p1 * V[1] + (1-p1) * V[0])
+    # V[1] = gamma * (p2 * V[2] + (1-p2) * V[0])
+    # V[2] = gamma * (p3 * 1    + (1-p3) * V[0])
+    A = np.array([
+        [1 - gamma * (1 - p1), -gamma * p1,         0.0],
+        [-gamma * (1 - p2),     1.0,                -gamma * p2],
+        [-gamma * (1 - p3),     0.0,                 1.0],
+    ])
+    b = np.array([0.0, 0.0, gamma * p3])
+    V = np.linalg.solve(A, b)
+    return float(V[0])
+
+
+def build_stochastic_cf(
+    agent_mapping: dict[str, set[str]],
+    M: int,
+    P_GOAL: int,
+    gamma: float,
+) -> tuple[list[str], dict[frozenset[str], float]]:
+    """Build a stochastic characteristic function for all coalitions.
+
+    For each coalition, count (d, m, a) from the agent mapping and compute
+    stochastic_value.  Returns (agents, v) ready for *_from_values functions.
+    """
+    agents = sorted({a for s in agent_mapping.values() for a in s})
+    n = len(agents)
+
+    # Precompute role sets
+    defenders = agent_mapping["pass_def_mid"]
+    midfielders = agent_mapping["pass_mid_att"]
+    attackers = agent_mapping["shoot"]
+
+    v: dict[frozenset[str], float] = {}
+    for size in range(n + 1):
+        for combo in combinations(agents, size):
+            coalition = frozenset(combo)
+            d_count = len(defenders & coalition)
+            m_count = len(midfielders & coalition)
+            a_count = len(attackers & coalition)
+            v[coalition] = stochastic_value(d_count, m_count, a_count, M, P_GOAL, gamma)
+
+    return agents, v
 
 
 def _index_label(name: str, fmt: str) -> str:
@@ -378,7 +457,14 @@ def main() -> None:
             print(f"Saved overlay to {pdf_path}", file=sys.stderr)
 
     # Compute power indices for each formation
-    index_names = ["Shapley-Shubik", "Banzhaf", "Usability", "Gatekeeper"]
+    index_names = [
+        "Usability",
+        "Gatekeeper",
+        "Shapley-Shubik",
+        "Banzhaf",
+        "Stoch. Shapley",
+        "Stoch. Banzhaf",
+    ]
     results: list[dict] = []
 
     for name, (n_def, n_mid, n_att) in FORMATIONS.items():
@@ -394,6 +480,11 @@ def main() -> None:
                 ("Gatekeeper", gatekeeper),
             ]
         }
+
+        # Stochastic characteristic function indices
+        s_agents, s_v = build_stochastic_cf(agent_mapping, M, P_GOAL, GAMMA)
+        indices["Stoch. Shapley"] = shapley_shubik_from_values(s_agents, s_v)
+        indices["Stoch. Banzhaf"] = banzhaf_from_values(s_agents, s_v)
 
         results.append(
             {
