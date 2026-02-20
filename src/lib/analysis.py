@@ -22,9 +22,7 @@ def incidence_matrix(net: PetriNet) -> np.ndarray:
     return np.array(im.a_matrix)
 
 
-def reachability_graph(
-    net: PetriNet, initial_marking: Marking
-) -> rg_util.TransitionSystem:
+def reachability_graph(net: PetriNet, initial_marking: Marking) -> rg_util.TransitionSystem:
     """Build the reachability graph from an initial marking."""
     return rg_util.construct_reachability_graph(net, initial_marking)
 
@@ -40,6 +38,7 @@ def is_reachable_restricted(
     BFS over the state space, firing only transitions in *allowed_transitions*.
     Uses covering semantics: a marking *m* satisfies the goal when m >= fm.
     """
+
     def _covers(m: Marking) -> bool:
         return all(m.get(p, 0) >= fm[p] for p in fm)
 
@@ -178,67 +177,6 @@ def _all_simple_paths(
     return paths
 
 
-def usability(
-    net: PetriNet,
-    im: Marking,
-    fm: Marking,
-    agent_mapping: AgentMapping,
-    *,
-    normalized: bool = True,
-    start_place: str | None = None,
-) -> dict[str, float]:
-    """Compute the usability index for each agent using prefix-based credit.
-
-    For each path of *k* transitions, consider *k + 2* prefixes (lengths 0
-    through *k + 1*).  For each non-empty prefix of length *L*, every
-    transition *j* (j < min(L, k)) contributes ``1 / (L * n_agents_j)`` to
-    each agent that can fire it.  The extra prefix at length *k + 1* dilutes
-    earlier agents' credit by accounting for reaching the final marking.
-
-    Scores are averaged across prefixes, then across paths.
-
-    When *normalized* is True (default), scores are rescaled to sum to 1.
-
-    When *start_place* is given, paths are enumerated from a single-token
-    marking in that place instead of *im*.
-    """
-    agents = sorted({a for s in agent_mapping.values() for a in s})
-    paths = _all_simple_paths(net, im, fm, start_place=start_place)
-
-    if not paths:
-        return {a: 0.0 for a in agents}
-
-    scores: dict[str, float] = {a: 0.0 for a in agents}
-    for path in paths:
-        k = len(path)
-        n_prefixes = k + 2  # prefix lengths 0 through k+1
-        path_scores: dict[str, float] = {a: 0.0 for a in agents}
-
-        for prefix_len in range(1, k + 2):  # prefix lengths 1..k+1
-            for j in range(min(prefix_len, k)):  # transitions 0..min(L-1, k-1)
-                t_name = path[j]
-                zone_agents = agent_mapping.get(t_name, set())
-                n_zone = len(zone_agents)
-                if n_zone > 0:
-                    credit = 1.0 / (prefix_len * n_zone)
-                    for a in zone_agents:
-                        path_scores[a] += credit
-
-        for a in agents:
-            scores[a] += path_scores[a] / n_prefixes
-
-    # Average across paths
-    n_paths = len(paths)
-    scores = {a: v / n_paths for a, v in scores.items()}
-
-    if normalized:
-        total = sum(scores.values())
-        if total > 0:
-            scores = {a: v / total for a, v in scores.items()}
-
-    return scores
-
-
 def _reachability_set_size(net: PetriNet, marking: Marking) -> int:
     """Count all markings reachable from *marking* (including itself) via BFS."""
     visited: set[Marking] = {marking}
@@ -253,7 +191,7 @@ def _reachability_set_size(net: PetriNet, marking: Marking) -> int:
     return len(visited)
 
 
-def participation(
+def usability(
     net: PetriNet,
     im: Marking,
     fm: Marking,
@@ -262,13 +200,18 @@ def participation(
     normalized: bool = True,
     start_place: str | None = None,
 ) -> dict[str, float]:
-    """Compute the participation index for each agent.
+    """Compute the usability index for each agent.
 
-    For each firing sequence (simple path from *im* to *fm*), count the
-    fraction of transitions that each agent can fire, then average across
-    all paths.
+    For each simple path from *im* to *fm*, all non-empty prefixes are
+    treated as firing sequences.  For each sequence of length *L*, every
+    transition contributes ``1 / (L * k)`` to each of the *k* agents that
+    can fire it.  Scores are averaged across all sequences.
 
-    participation(a) = (1/|S|) * sum_s [ #{t in s : a can fire t} / |s| ]
+    usability(a) = (1/|S|) * sum_s sum_{t in s} 1 / (|s| * |A(t)|)
+                   for each agent a in A(t)
+
+    where S is the set of all non-empty prefixes of all simple paths to *fm*
+    and A(t) is the set of agents that can fire transition t.
 
     When *normalized* is True (default), scores are rescaled to sum to 1.
 
@@ -281,19 +224,25 @@ def participation(
     if not paths:
         return {a: 0.0 for a in agents}
 
-    scores: dict[str, float] = {a: 0.0 for a in agents}
+    # Expand each path into all non-empty prefixes (firing sequences)
+    sequences: list[list[str]] = []
     for path in paths:
-        path_len = len(path)
-        if path_len == 0:
-            continue
-        for t_name in path:
-            capable = agent_mapping.get(t_name, set())
-            for agent in capable:
-                scores[agent] += 1.0 / path_len
+        for length in range(1, len(path) + 1):
+            sequences.append(path[:length])
 
-    # Average across paths
-    n_paths = len(paths)
-    scores = {a: v / n_paths for a, v in scores.items()}
+    scores: dict[str, float] = {a: 0.0 for a in agents}
+    for seq in sequences:
+        seq_len = len(seq)
+        for t_name in seq:
+            capable = agent_mapping.get(t_name, set())
+            n_capable = len(capable)
+            if n_capable > 0:
+                for agent in capable:
+                    scores[agent] += 1.0 / (seq_len * n_capable)
+
+    # Average across sequences
+    n_seqs = len(sequences)
+    scores = {a: v / n_seqs for a, v in scores.items()}
 
     if normalized:
         total = sum(scores.values())

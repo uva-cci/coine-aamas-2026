@@ -8,12 +8,11 @@ import subprocess
 import sys
 from functools import partial
 from pathlib import Path
+from statistics import median
 
 import graphviz
 import numpy as np
 from PIL import Image
-
-from statistics import median
 
 from lib import (
     banzhaf,
@@ -21,7 +20,6 @@ from lib import (
     gini_coefficient,
     granularity,
     load_pnml_stochastic,
-    participation,
     plot_granularity_scatter,
     plot_index_correlation,
     plot_lorenz_curves,
@@ -53,6 +51,7 @@ INDEX_LABELS: dict[str, tuple[str, str]] = {
     "Usability": ("Usability", r"$U(a_i)$"),
     "Participation": ("Participation", r"$P(a_i)$"),
     "Gatekeeper": ("Gatekeeper", r"$G(a_i)$"),
+    "Gatekeeper-Reach": ("Gatekeeper-Reach", r"$G^R(a_i)$"),
 }
 
 
@@ -272,7 +271,7 @@ def format_table_markdown(results: list[dict], index_names: list[str]) -> str:
     for entry in results:
         gran_cells.append(f"{entry['granularity']:.4f}")
         gran_cells.extend("" for _ in role_prefixes[1:])
-    lines.append(f"| Granularity | " + " | ".join(gran_cells) + " |")
+    lines.append("| Granularity | " + " | ".join(gran_cells) + " |")
 
     return "\n".join(lines) + "\n"
 
@@ -307,9 +306,7 @@ def format_table_latex(results: list[dict], index_names: list[str]) -> str:
     # Granularity row
     gran_parts = []
     for entry in results:
-        gran_parts.append(
-            rf"\multicolumn{{{n_roles}}}{{c}}{{{entry['granularity']:.4f}}}"
-        )
+        gran_parts.append(rf"\multicolumn{{{n_roles}}}{{c}}{{{entry['granularity']:.4f}}}")
     lines.append(r"\midrule")
     lines.append(r"$\mathcal{G}$ & " + " & ".join(gran_parts) + r" \\")
 
@@ -381,7 +378,7 @@ def main() -> None:
             print(f"Saved overlay to {pdf_path}", file=sys.stderr)
 
     # Compute power indices for each formation
-    index_names = ["Shapley-Shubik", "Banzhaf", "Usability", "Participation", "Gatekeeper"]
+    index_names = ["Shapley-Shubik", "Banzhaf", "Usability", "Gatekeeper"]
     results: list[dict] = []
 
     for name, (n_def, n_mid, n_att) in FORMATIONS.items():
@@ -394,7 +391,6 @@ def main() -> None:
                 ("Shapley-Shubik", shapley_shubik),
                 ("Banzhaf", banzhaf),
                 ("Usability", partial(usability, start_place="Defense")),
-                ("Participation", partial(participation, start_place="Defense")),
                 ("Gatekeeper", gatekeeper),
             ]
         }
@@ -432,13 +428,16 @@ def main() -> None:
         ]:
             series: dict[str, list[float]] = {}
             for idx_name in index_names:
-                series[idx_name] = [
-                    stat_fn(e["indices"][idx_name].values()) for e in results
-                ]
+                series[idx_name] = [stat_fn(e["indices"][idx_name].values()) for e in results]
             path = output_dir / f"granularity_vs_{stat_name}.{ext}"
-            plot_granularity_scatter(labels, grans, series, path,
-                                     title=f"Football: Granularity vs {ylabel}",
-                                     ylabel=ylabel)
+            plot_granularity_scatter(
+                labels,
+                grans,
+                series,
+                path,
+                title=f"Football: Granularity vs {ylabel}",
+                ylabel=ylabel,
+            )
             print(f"Saved plot to {path}", file=sys.stderr)
 
         # Shared data for remaining plots (one representative per role)
@@ -447,29 +446,51 @@ def main() -> None:
         index_powers: dict[str, list[list[float]]] = {}
         for idx_name in index_names:
             index_powers[idx_name] = [
-                [e["indices"][idx_name][f"{p}1"] for p in role_prefixes]
-                for e in results
+                [e["indices"][idx_name][f"{p}1"] for p in role_prefixes] for e in results
             ]
 
         for name, fn in [
-            ("power_bars", lambda p: plot_power_bars(
-                labels, agent_labels, index_powers, p,
-                title="Football: Power per Role")),
-            ("index_correlation", lambda p: plot_index_correlation(
-                labels, agent_labels, index_powers, p,
-                title="Football: Index Correlation")),
-            ("power_heatmap", lambda p: plot_power_heatmap(
-                labels, agent_labels, index_powers, p,
-                title="Football: Power Heatmap")),
-            ("lorenz_curves", lambda p: plot_lorenz_curves(
-                labels, index_powers, p,
-                title="Football: Lorenz Curves")),
-            ("rank_agreement", lambda p: plot_rank_agreement(
-                labels, index_powers, p,
-                title="Football: Rank Agreement")),
-            ("power_deltas", lambda p: plot_power_deltas(
-                labels, agent_labels, index_powers, p, baseline_idx=0,
-                title="Football: Power Deltas from 2-5-3")),
+            (
+                "power_bars",
+                lambda p: plot_power_bars(
+                    labels, agent_labels, index_powers, p, title="Football: Power per Role"
+                ),
+            ),
+            (
+                "index_correlation",
+                lambda p: plot_index_correlation(
+                    labels, agent_labels, index_powers, p, title="Football: Index Correlation"
+                ),
+            ),
+            (
+                "power_heatmap",
+                lambda p: plot_power_heatmap(
+                    labels, agent_labels, index_powers, p, title="Football: Power Heatmap"
+                ),
+            ),
+            (
+                "lorenz_curves",
+                lambda p: plot_lorenz_curves(
+                    labels, index_powers, p, title="Football: Lorenz Curves"
+                ),
+            ),
+            (
+                "rank_agreement",
+                lambda p: plot_rank_agreement(
+                    labels, index_powers, p, title="Football: Rank Agreement"
+                ),
+            ),
+            (
+                "power_deltas",
+                lambda p: plot_power_deltas(
+                    labels,
+                    agent_labels,
+                    index_powers,
+                    p,
+                    baseline_idx=0,
+                    title="Football: Power Deltas from 2-5-3",
+                ),
+            ),
         ]:
             path = output_dir / f"{name}.{ext}"
             fn(path)

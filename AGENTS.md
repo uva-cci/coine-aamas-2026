@@ -192,7 +192,7 @@ def usability(
     *, normalized: bool = True, start_place: str | None = None,
 ) -> dict[str, float]
 ```
-Usability index via prefix-based shared credit. For each path of *k* transitions, considers *k+2* prefixes; credit per transition `= 1/(L * n_agents)`. Averaged across prefixes then paths. Optional `start_place` overrides initial marking.
+Usability index via prefix-based shared credit. For each simple path, all non-empty prefixes are treated as firing sequences. For each sequence of length *L*, every transition contributes `1/(L * k)` to each of the *k* agents that can fire it. Averaged across all sequences. Optional `start_place` overrides initial marking.
 
 ```python
 def gatekeeper(
@@ -209,14 +209,6 @@ def gatekeeper_reach(
 ) -> dict[str, float]
 ```
 Reachability-weighted gatekeeper variant. Weight = `|R(m')|` (number of markings reachable from the marking after firing the transition). Replaces the positional `(L-p)/L` proxy with actual forward-reachability set size. Credit shared equally among capable agents, summed across all simple paths.
-
-```python
-def participation(
-    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
-    *, normalized: bool = True, start_place: str | None = None,
-) -> dict[str, float]
-```
-Participation index — average fraction of transitions each agent can fire across all simple paths. Simpler alternative to usability.
 
 #### Distributional metrics
 
