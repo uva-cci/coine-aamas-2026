@@ -390,6 +390,7 @@ def gatekeeper(
     agent_mapping: AgentMapping,
     *,
     normalized: bool = True,
+    start_place: str | None = None,
 ) -> dict[str, float]:
     """Compute the gatekeeper power index for each agent.
 
@@ -402,15 +403,28 @@ def gatekeeper(
     Scores are averaged over all paths.
 
     When *normalized* is True (default), scores are rescaled to sum to 1.
+
+    When *start_place* is given, paths are enumerated from a single-token
+    marking in that place instead of *im*.
     """
     agents = sorted({a for s in agent_mapping.values() for a in s})
-    paths = _all_simple_paths(net, im, fm)
+
+    # Use the effective initial marking for both path enumeration and idom
+    if start_place is not None:
+        place_obj = next((p for p in net.places if p.name == start_place), None)
+        if place_obj is None:
+            raise KeyError(f"Place '{start_place}' not found in net")
+        effective_im = Marking({place_obj: 1})
+    else:
+        effective_im = im
+
+    paths = _all_simple_paths(net, effective_im, fm)
 
     if not paths:
         return {a: 0.0 for a in agents}
 
     # Build transition graph and compute idom
-    adj, transitions = _build_transition_graph(net, im)
+    adj, transitions = _build_transition_graph(net, effective_im)
     idom = _compute_idom(adj, "_ROOT_", transitions)
 
     # Precompute idom_count: how many transitions each transition dominates

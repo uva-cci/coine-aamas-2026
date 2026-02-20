@@ -16,6 +16,8 @@ import numpy as np
 from generate_pnml import FINAL_PLACE, INITIAL_PLACE, PLACES, build_edges, build_pnml
 from PIL import Image
 
+from pm4py.objects.petri_net.obj import Marking
+
 from lib import (
     banzhaf_from_values,
     gatekeeper,
@@ -148,46 +150,35 @@ def stochastic_value_2team(
     m: int,
     p_goal: int,
     gamma: float,
+    *,
+    team: str = "A",
 ) -> float:
-    """Expected discounted probability of Team A scoring (Goal_B) in the 2-team model.
+    """Expected discounted probability of *team* scoring in the 2-team model.
 
     6 transient states: Defense_A(0), Midfield_A(1), Attack_A(2),
                         Defense_B(3), Midfield_B(4), Attack_B(5)
-    2 absorbing states: Goal_B (reward=1), Goal_A (reward=0).
+    2 absorbing states: Goal_B, Goal_A.
 
-    Transition probabilities from each state use the stochastic weights
-    normalized by m (total cells per zone).
+    When *team* is ``"A"``, Goal_B gets reward 1 and Goal_A gets reward 0.
+    When *team* is ``"B"``, Goal_A gets reward 1 and Goal_B gets reward 0.
     """
     if da == 0 and ma == 0 and aa == 0:
         return 0.0
     if db == 0 and mb == 0 and ab == 0:
         return 0.0
 
-    # State indices: 0=Defense_A, 1=Midfield_A, 2=Attack_A,
-    #                3=Defense_B, 4=Midfield_B, 5=Attack_B
-
-    # Transition weights (raw) for each state
-    # Defense_A: pass_def_mid_A (→Midfield_A, w=ma_count), fail_def_A (→Attack_B, w=ab_count)
-    # Midfield_A: pass_mid_att_A (→Attack_A, w=aa_count), fail_mid_A (→Midfield_B, w=mb_count)
-    # Attack_A: shoot_A (→Goal_B, w=p_goal), fail_att_A (→Defense_B, w=db_count)
-    # Defense_B: pass_def_mid_B (→Midfield_B, w=mb_count), fail_def_B (→Attack_A, w=aa_count)
-    # Midfield_B: pass_mid_att_B (→Attack_B, w=ab_count), fail_mid_B (→Midfield_A, w=ma_count)
-    # Attack_B: shoot_B (→Goal_A, w=p_goal), fail_att_B (→Defense_A, w=da_count)
+    # Absorbing-state markers: -1 = Goal_B, -2 = Goal_A
+    reward = {"-1": 1.0, "-2": 0.0} if team == "A" else {"-1": 0.0, "-2": 1.0}
 
     states = [
         # (success_target, success_weight, fail_target, fail_weight)
-        (1, ma, 5, ab),  # Defense_A
-        (2, aa, 4, mb),  # Midfield_A
-        (-1, p_goal, 3, db),  # Attack_A (-1 = Goal_B absorbing, reward=1)
-        (4, mb, 2, aa),  # Defense_B
-        (5, ab, 1, ma),  # Midfield_B
-        (-2, p_goal, 0, da),  # Attack_B (-2 = Goal_A absorbing, reward=0)
+        (1, ma, 5, ab),    # Defense_A
+        (2, aa, 4, mb),    # Midfield_A
+        (-1, p_goal, 3, db),  # Attack_A (→Goal_B on success)
+        (4, mb, 2, aa),    # Defense_B
+        (5, ab, 1, ma),    # Midfield_B
+        (-2, p_goal, 0, da),  # Attack_B (→Goal_A on success)
     ]
-
-    # Build the 6x6 transition matrix Q (transient-to-transient)
-    # and absorption reward vector r (probability of reaching Goal_B from each state)
-    # V = gamma * Q @ V + gamma * r
-    # => (I - gamma*Q) V = gamma * r
 
     Q = np.zeros((6, 6))
     r = np.zeros(6)
@@ -199,21 +190,11 @@ def stochastic_value_2team(
         p_success = s_w / total
         p_fail = f_w / total
 
-        if s_tgt == -1:
-            # Absorbing to Goal_B (reward 1)
-            r[i] += p_success
-        elif s_tgt == -2:
-            # Absorbing to Goal_A (reward 0)
-            pass
-        else:
-            Q[i, s_tgt] += p_success
-
-        if f_tgt == -1:
-            r[i] += p_fail
-        elif f_tgt == -2:
-            pass
-        else:
-            Q[i, f_tgt] += p_fail
+        for tgt, prob in [(s_tgt, p_success), (f_tgt, p_fail)]:
+            if tgt < 0:
+                r[i] += prob * reward[str(tgt)]
+            else:
+                Q[i, tgt] += prob
 
     A = np.eye(6) - gamma * Q
     b = gamma * r
@@ -226,8 +207,14 @@ def build_stochastic_cf_2team(
     m: int,
     p_goal: int,
     gamma: float,
+    *,
+    team: str = "A",
 ) -> tuple[list[str], dict[frozenset[str], float]]:
-    """Build stochastic characteristic function for all coalitions in 2-team model."""
+    """Build stochastic characteristic function for all coalitions in 2-team model.
+
+    When *team* is ``"A"``, the CF measures P(Team A scores).
+    When *team* is ``"B"``, the CF measures P(Team B scores).
+    """
     agents = sorted({a for s in agent_mapping.values() for a in s})
     n = len(agents)
 
@@ -252,6 +239,7 @@ def build_stochastic_cf_2team(
                 m,
                 p_goal,
                 gamma,
+                team=team,
             )
     return agents, v
 
@@ -572,22 +560,65 @@ def main() -> None:
                 print(f"  Saved {viz_name}_overlay.pdf", file=sys.stderr)
 
         agent_mapping = build_agent_mapping_2team(n1_a, n2_a, n3_a, n1_b, n2_b, n3_b)
+        team_a_agents = {f"DA{i}" for i in range(1, n1_a + 1)} | \
+                        {f"MA{i}" for i in range(1, n2_a + 1)} | \
+                        {f"AA{i}" for i in range(1, n3_a + 1)}
 
-        # Structural SS + Banzhaf: precompute CF once, reuse for both
-        agents, v = _precompute_characteristic_function(net, im, fm, agent_mapping)
-        v_float = {k: float(val) for k, val in v.items()}
+        # Build final markings for each team's goal
+        goal_b = next(p for p in net.places if p.name == "Goal_B")
+        goal_a = next(p for p in net.places if p.name == "Goal_A")
+        fm_a = Marking({goal_b: 1})  # Team A wants Goal_B
+        fm_b = Marking({goal_a: 1})  # Team B wants Goal_A
+
+        # --- Structural indices: compute per-team, merge ---
+        # Team A perspective (fm = Goal_B)
+        agents_a, v_a = _precompute_characteristic_function(net, im, fm_a, agent_mapping)
+        v_a_float = {k: float(val) for k, val in v_a.items()}
+        # Team B perspective (fm = Goal_A)
+        agents_b, v_b = _precompute_characteristic_function(net, im, fm_b, agent_mapping)
+        v_b_float = {k: float(val) for k, val in v_b.items()}
+
+        def _merge(vals_a: dict[str, float], vals_b: dict[str, float]) -> dict[str, float]:
+            """Take Team A agents from vals_a, Team B agents from vals_b."""
+            merged = {}
+            for agent in vals_a:
+                merged[agent] = vals_a[agent] if agent in team_a_agents else vals_b[agent]
+            return merged
 
         indices: dict[str, dict[str, float]] = {
-            "Shapley-Shubik": shapley_shubik_from_values(agents, v_float),
-            "Banzhaf": banzhaf_from_values(agents, v_float),
-            "Usability": usability(net, im, fm, agent_mapping, start_place="Defense_A"),
-            "Gatekeeper": gatekeeper(net, im, fm, agent_mapping),
+            "Shapley-Shubik": _merge(
+                shapley_shubik_from_values(agents_a, v_a_float),
+                shapley_shubik_from_values(agents_b, v_b_float),
+            ),
+            "Banzhaf": _merge(
+                banzhaf_from_values(agents_a, v_a_float),
+                banzhaf_from_values(agents_b, v_b_float),
+            ),
+            "Usability": _merge(
+                usability(net, im, fm_a, agent_mapping, start_place="Defense_A"),
+                usability(net, im, fm_b, agent_mapping, start_place="Defense_B"),
+            ),
+            "Gatekeeper": _merge(
+                gatekeeper(net, im, fm_a, agent_mapping),
+                gatekeeper(net, im, fm_b, agent_mapping, start_place="Defense_B"),
+            ),
         }
 
-        # Stochastic SS + Banzhaf: precompute CF once, reuse for both
-        s_agents, s_v = build_stochastic_cf_2team(agent_mapping, M, P_GOAL, GAMMA)
-        indices["Stoch. Shapley"] = shapley_shubik_from_values(s_agents, s_v)
-        indices["Stoch. Banzhaf"] = banzhaf_from_values(s_agents, s_v)
+        # --- Stochastic indices: compute per-team, merge ---
+        s_agents_a, s_v_a = build_stochastic_cf_2team(
+            agent_mapping, M, P_GOAL, GAMMA, team="A"
+        )
+        s_agents_b, s_v_b = build_stochastic_cf_2team(
+            agent_mapping, M, P_GOAL, GAMMA, team="B"
+        )
+        indices["Stoch. Shapley"] = _merge(
+            shapley_shubik_from_values(s_agents_a, s_v_a),
+            shapley_shubik_from_values(s_agents_b, s_v_b),
+        )
+        indices["Stoch. Banzhaf"] = _merge(
+            banzhaf_from_values(s_agents_a, s_v_a),
+            banzhaf_from_values(s_agents_b, s_v_b),
+        )
 
         results.append(
             {
