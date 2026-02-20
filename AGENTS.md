@@ -21,9 +21,12 @@ Research project for COINE @ AAMAS 2026 — Petri net analysis using pm4py. The 
 │   ├── example/                      # minimal net — simple_net.pnml
 │   ├── sequential/                   # sequential net — sequential.pnml
 │   ├── fork-join/                    # fork-join net — fork_join.pnml
-│   └── football/                     # zone-based stochastic SPN — football.pnml
+│   ├── football/                     # zone-based stochastic SPN — football.pnml
+│   │   ├── run.py
+│   │   └── generate_pnml.py          # builds football.pnml programmatically
+│   └── football-2team/               # two-team adversarial SPN — football-2team.pnml
 │       ├── run.py
-│       └── generate_pnml.py          # builds football.pnml programmatically
+│       └── generate_pnml.py          # builds football-2team.pnml programmatically
 └── tests/                            # configured in pyproject.toml (empty)
 ```
 
@@ -183,6 +186,25 @@ def banzhaf(
 ) -> dict[str, float]
 ```
 Banzhaf power index. Raw swing count normalized by default. `eta_i = sum_{S⊆N\{i}} (v(S∪{i}) - v(S))`.
+
+#### Pre-computed characteristic function variants
+
+```python
+def shapley_shubik_from_values(
+    agents: list[str],
+    v: dict[frozenset[str], float],
+) -> dict[str, float]
+```
+Shapley-Shubik index from a pre-computed continuous-valued characteristic function `v: 2^N → [0,1]`. Normalized to sum to 1.
+
+```python
+def banzhaf_from_values(
+    agents: list[str],
+    v: dict[frozenset[str], float],
+    *, normalized: bool = True,
+) -> dict[str, float]
+```
+Banzhaf index from a pre-computed continuous-valued characteristic function.
 
 #### Path-based indices
 
