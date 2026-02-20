@@ -1,5 +1,6 @@
 """Structural analysis of Petri nets."""
 
+from collections import deque
 from itertools import combinations
 from math import factorial
 
@@ -252,6 +253,104 @@ def usability(
     return scores
 
 
+def _build_transition_graph(net: PetriNet, im: Marking) -> tuple[dict[str, set[str]], set[str]]:
+    """Build a directed transition graph from the reachability graph.
+
+    Returns ``(adj, transitions)`` where *adj* maps each node to its successors
+    and *transitions* is the set of all transition names encountered.
+
+    The graph has a virtual root ``"_ROOT_"`` with edges to every transition
+    enabled at the initial marking.  An edge ``t1 → t2`` exists when firing
+    ``t1`` at some reachable marking produces a marking where ``t2`` is enabled.
+    """
+    root = "_ROOT_"
+    adj: dict[str, set[str]] = {root: set()}
+    all_transitions: set[str] = set()
+
+    visited: set[Marking] = {im}
+    queue: deque[Marking] = deque([im])
+
+    while queue:
+        marking = queue.popleft()
+        enabled = pn_semantics.enabled_transitions(net, marking)
+        for t in enabled:
+            t_name = t.name
+            all_transitions.add(t_name)
+            # Root points to transitions enabled at the initial marking
+            if marking == im:
+                adj[root].add(t_name)
+            new_marking = pn_semantics.execute(t, net, marking)
+            if new_marking not in visited:
+                visited.add(new_marking)
+                queue.append(new_marking)
+            # Add edges from t to all transitions enabled at the successor marking
+            if t_name not in adj:
+                adj[t_name] = set()
+            for t2 in pn_semantics.enabled_transitions(net, new_marking):
+                all_transitions.add(t2.name)
+                adj[t_name].add(t2.name)
+                if t2.name not in adj:
+                    adj[t2.name] = set()
+
+    return adj, all_transitions
+
+
+def _compute_idom(
+    adj: dict[str, set[str]], root: str, transitions: set[str]
+) -> dict[str, str | None]:
+    """Compute immediate dominators for a transition graph.
+
+    Uses the iterative dataflow algorithm (Cooper et al.):
+      dom[root] = {root}
+      dom[n]    = {n} ∪ ∩{dom[p] | p ∈ preds[n]}   (repeat until stable)
+
+    Returns a dict mapping each transition to its idom transition name,
+    or ``None`` when the idom is the virtual root.
+    """
+    all_nodes = {root} | transitions
+
+    # Build predecessor map
+    preds: dict[str, set[str]] = {n: set() for n in all_nodes}
+    for src, dsts in adj.items():
+        for dst in dsts:
+            preds[dst].add(src)
+
+    # Iterative dominator computation
+    dom: dict[str, set[str]] = {n: set(all_nodes) for n in all_nodes}
+    dom[root] = {root}
+
+    changed = True
+    while changed:
+        changed = False
+        for n in all_nodes:
+            if n == root:
+                continue
+            pred_set = preds[n]
+            if not pred_set:
+                new_dom = {n}
+            else:
+                new_dom = set.intersection(*(dom[p] for p in pred_set))
+                new_dom = {n} | new_dom
+            if new_dom != dom[n]:
+                dom[n] = new_dom
+                changed = True
+
+    # Extract idom: for each node n, idom(n) is the unique d in dom(n)\{n}
+    # such that dom(d) = dom(n)\{n}  (i.e. d dominates all other dominators of n)
+    idom: dict[str, str | None] = {}
+    for t in transitions:
+        sdom = dom[t] - {t}  # strict dominators
+        # idom is the element of sdom whose own dominator set equals sdom
+        idom_t: str | None = None
+        for d in sdom:
+            if dom[d] == sdom:
+                idom_t = d
+                break
+        idom[t] = None if idom_t == root else idom_t
+
+    return idom
+
+
 def gatekeeper(
     net: PetriNet,
     im: Marking,
@@ -262,12 +361,13 @@ def gatekeeper(
 ) -> dict[str, float]:
     """Compute the gatekeeper power index for each agent.
 
-    For each transition at position *p* in a path of length *L*:
-    - Position weight: (L − p) / L  (earlier transitions weigh more)
-    - Credit is shared equally among the *k* agents that can fire the transition
+    Based on immediate dominators (idom) in the transition graph built from
+    the reachability graph.  ``idom_count[t]`` is the number of transitions
+    whose immediate dominator is ``t``.
 
-    Each agent's contribution per transition: (L − p) / (L · k).
-    Scores are summed across all paths.
+    For each simple path σ of length L, each transition σ_i gets credit
+    ``idom_count[σ_i] / (|T| · k)`` shared among the *k* capable agents.
+    Scores are averaged over all paths.
 
     When *normalized* is True (default), scores are rescaled to sum to 1.
     """
@@ -277,17 +377,31 @@ def gatekeeper(
     if not paths:
         return {a: 0.0 for a in agents}
 
+    # Build transition graph and compute idom
+    adj, transitions = _build_transition_graph(net, im)
+    idom = _compute_idom(adj, "_ROOT_", transitions)
+
+    # Precompute idom_count: how many transitions each transition dominates
+    idom_count: dict[str, int] = {t: 0 for t in transitions}
+    for t, d in idom.items():
+        if d is not None:
+            idom_count[d] = idom_count.get(d, 0) + 1
+
+    n_transitions = len(transitions)
+
     scores: dict[str, float] = {a: 0.0 for a in agents}
     for path in paths:
-        path_len = len(path)
-        for position, t_name in enumerate(path):
-            position_weight = (path_len - position) / path_len
+        for t_name in path:
             capable = agent_mapping.get(t_name, set())
             n_capable = len(capable)
             if n_capable > 0:
-                contribution = position_weight / n_capable
+                credit = idom_count.get(t_name, 0) / (n_transitions * n_capable)
                 for agent in capable:
-                    scores[agent] += contribution
+                    scores[agent] += credit
+
+    # Average over paths
+    n_paths = len(paths)
+    scores = {a: v / n_paths for a, v in scores.items()}
 
     if normalized:
         total = sum(scores.values())

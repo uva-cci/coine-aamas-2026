@@ -200,7 +200,7 @@ def gatekeeper(
     *, normalized: bool = True,
 ) -> dict[str, float]
 ```
-Gatekeeper power index. Position weight `(L-p)/L` (earlier transitions weigh more), credit shared equally among capable agents. Summed across all simple paths.
+Gatekeeper power index based on immediate dominators (idom) in the transition graph. `idom_count[t]` = number of transitions whose immediate dominator is `t`. For each simple path, each transition gets credit `idom_count[t] / (|T| * k)` shared among `k` capable agents. Averaged over all paths.
 
 ```python
 def gatekeeper_reach(
@@ -228,6 +228,8 @@ Gini index of the supply-degree distribution across transitions (how unevenly ag
 - `_precompute_characteristic_function(net, im, fm, agent_mapping)` — enumerate all coalitions, compute characteristic function `v`
 - `_all_simple_paths(net, im, fm, *, start_place=None)` — DFS for all simple paths (no repeated markings)
 - `_reachability_set_size(net, marking)` — BFS count of all markings reachable from a given marking
+- `_build_transition_graph(net, im)` — BFS to build directed transition graph with virtual root `_ROOT_`
+- `_compute_idom(adj, root, transitions)` — iterative dominator computation, returns idom mapping
 
 ## Conventions
 
