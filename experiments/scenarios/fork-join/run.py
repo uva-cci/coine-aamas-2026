@@ -234,22 +234,28 @@ def main() -> None:
         scores["Granularity"] = granularity(agent_mapping)
         results.append((name, scores))
 
-    if args.format == "latex":
-        output = format_distribution_latex() + "\n" + format_scores_latex(results)
-    else:
-        output = format_distribution_markdown() + "\n" + format_scores_markdown(results)
+    # Always save both formats to outputs/
+    out_dir = SCENARIO_DIR / "outputs"
+    out_dir.mkdir(exist_ok=True)
 
+    md_table = format_distribution_markdown() + "\n" + format_scores_markdown(results)
+    tex_table = format_distribution_latex() + "\n" + format_scores_latex(results)
+
+    (out_dir / "table.md").write_text(md_table, encoding="utf-8")
+    (out_dir / "table.tex").write_text(tex_table, encoding="utf-8")
+    print(f"Wrote table.md and table.tex to {out_dir}", file=sys.stderr)
+
+    # Still support explicit --output / stdout for the chosen format
+    chosen = tex_table if args.format == "latex" else md_table
     if args.output:
-        args.output.write_text(output, encoding="utf-8")
-        print(f"Wrote tables to {args.output}", file=sys.stderr)
+        args.output.write_text(chosen, encoding="utf-8")
+        print(f"Wrote table to {args.output}", file=sys.stderr)
     else:
-        print(output)
+        print(chosen)
 
     if args.plot:
         labels = [name for name, _ in results]
         grans = [scores["Granularity"] for _, scores in results]
-        out_dir = SCENARIO_DIR / "outputs"
-        out_dir.mkdir(exist_ok=True)
         ext = args.plot_format
 
         # Scatter plots: median and Gini vs granularity

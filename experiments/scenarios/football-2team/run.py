@@ -622,17 +622,21 @@ def main() -> None:
             }
         )
 
-    # Format and output table
-    if args.format == "latex":
-        table = format_table_latex(results, index_names)
-    else:
-        table = format_table_markdown(results, index_names)
+    # Always save both formats to outputs/
+    md_table = format_table_markdown(results, index_names)
+    tex_table = format_table_latex(results, index_names)
 
+    (output_dir / "table.md").write_text(md_table, encoding="utf-8")
+    (output_dir / "table.tex").write_text(tex_table, encoding="utf-8")
+    print(f"Wrote table.md and table.tex to {output_dir}", file=sys.stderr)
+
+    # Still support explicit --output / stdout for the chosen format
+    chosen = tex_table if args.format == "latex" else md_table
     if args.output:
-        args.output.write_text(table, encoding="utf-8")
+        args.output.write_text(chosen, encoding="utf-8")
         print(f"Wrote table to {args.output}", file=sys.stderr)
     else:
-        print(table)
+        print(chosen)
 
     if args.plot:
         labels = [e["matchup_label"] for e in results]
