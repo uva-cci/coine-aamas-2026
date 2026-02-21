@@ -599,7 +599,7 @@ def main() -> None:
                 usability(net, im, fm_b, agent_mapping, start_place="Defense_B"),
             ),
             "Gatekeeper": _merge(
-                gatekeeper(net, im, fm_a, agent_mapping),
+                gatekeeper(net, im, fm_a, agent_mapping, start_place="Defense_A"),
                 gatekeeper(net, im, fm_b, agent_mapping, start_place="Defense_B"),
             ),
         }
