@@ -591,14 +591,18 @@ def main() -> None:
         s_agents_b, s_v_b = build_stochastic_cf_2team(
             agent_mapping, M, P_GOAL, GAMMA, team="B"
         )
-        indices["Shapley-Shubik"] = _merge(
+        ss_merged = _merge(
             shapley_shubik_from_values(s_agents_a, s_v_a),
             shapley_shubik_from_values(s_agents_b, s_v_b),
         )
-        indices["Banzhaf"] = _merge(
+        bz_merged = _merge(
             banzhaf_from_values(s_agents_a, s_v_a),
             banzhaf_from_values(s_agents_b, s_v_b),
         )
+        ss_total = sum(ss_merged.values())
+        bz_total = sum(bz_merged.values())
+        indices["Shapley-Shubik"] = {a: v / ss_total for a, v in ss_merged.items()} if ss_total > 0 else ss_merged
+        indices["Banzhaf"] = {a: v / bz_total for a, v in bz_merged.items()} if bz_total > 0 else bz_merged
 
         results.append(
             {
