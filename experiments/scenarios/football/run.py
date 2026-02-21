@@ -6,7 +6,6 @@ import io
 import re
 import subprocess
 import sys
-from functools import partial
 from itertools import combinations
 from pathlib import Path
 from statistics import median
@@ -16,7 +15,6 @@ import numpy as np
 from PIL import Image
 
 from lib import (
-    banzhaf,
     banzhaf_from_values,
     gatekeeper,
     gini_coefficient,
@@ -29,7 +27,6 @@ from lib import (
     plot_power_deltas,
     plot_power_heatmap,
     plot_rank_agreement,
-    shapley_shubik,
     shapley_shubik_from_values,
     usability,
 )
@@ -58,12 +55,8 @@ GAMMA = 0.99  # discount factor for stochastic CF
 INDEX_LABELS: dict[str, tuple[str, str]] = {
     "Shapley-Shubik": ("Shapley-Shubik", r"$\phi_{a_i}$"),
     "Banzhaf": ("Banzhaf", r"$\beta_{a_i}$"),
-    "Stoch. Shapley": ("Stoch. Shapley", r"$\phi^s_{a_i}$"),
-    "Stoch. Banzhaf": ("Stoch. Banzhaf", r"$\beta^s_{a_i}$"),
     "Usability": ("Usability", r"$U(a_i)$"),
-    "Participation": ("Participation", r"$P(a_i)$"),
     "Gatekeeper": ("Gatekeeper", r"$G(a_i)$"),
-    "Gatekeeper-Reach": ("Gatekeeper-Reach", r"$G^R(a_i)$"),
 }
 
 
@@ -462,8 +455,6 @@ def main() -> None:
         "Gatekeeper",
         "Shapley-Shubik",
         "Banzhaf",
-        "Stoch. Shapley",
-        "Stoch. Banzhaf",
     ]
     results: list[dict] = []
 
@@ -472,19 +463,12 @@ def main() -> None:
         agent_mapping = build_agent_mapping(n_def, n_mid, n_att)
 
         indices = {
-            idx: fn(net, im, fm, agent_mapping)
-            for idx, fn in [
-                ("Shapley-Shubik", shapley_shubik),
-                ("Banzhaf", banzhaf),
-                ("Usability", partial(usability, start_place="Defense")),
-                ("Gatekeeper", gatekeeper),
-            ]
+            "Usability": usability(net, im, fm, agent_mapping, start_place="Defense"),
+            "Gatekeeper": gatekeeper(net, im, fm, agent_mapping),
         }
-
-        # Stochastic characteristic function indices
         s_agents, s_v = build_stochastic_cf(agent_mapping, M, P_GOAL, GAMMA)
-        indices["Stoch. Shapley"] = shapley_shubik_from_values(s_agents, s_v)
-        indices["Stoch. Banzhaf"] = banzhaf_from_values(s_agents, s_v)
+        indices["Shapley-Shubik"] = shapley_shubik_from_values(s_agents, s_v)
+        indices["Banzhaf"] = banzhaf_from_values(s_agents, s_v)
 
         results.append(
             {

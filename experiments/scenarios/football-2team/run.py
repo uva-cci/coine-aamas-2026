@@ -34,7 +34,6 @@ from lib import (
     shapley_shubik_from_values,
     usability,
 )
-from lib.analysis import _precompute_characteristic_function
 
 SCENARIO_DIR = Path(__file__).parent
 
@@ -54,8 +53,6 @@ MATCHUPS: list[tuple[str, tuple[int, int, int], str, tuple[int, int, int]]] = [
 INDEX_LABELS: dict[str, tuple[str, str]] = {
     "Shapley-Shubik": ("Shapley-Shubik", r"$\phi_{a_i}$"),
     "Banzhaf": ("Banzhaf", r"$\beta_{a_i}$"),
-    "Stoch. Shapley": ("Stoch. Shapley", r"$\phi^s_{a_i}$"),
-    "Stoch. Banzhaf": ("Stoch. Banzhaf", r"$\beta^s_{a_i}$"),
     "Usability": ("Usability", r"$U(a_i)$"),
     "Gatekeeper": ("Gatekeeper", r"$G(a_i)$"),
 }
@@ -520,8 +517,6 @@ def main() -> None:
         "Gatekeeper",
         "Shapley-Shubik",
         "Banzhaf",
-        "Stoch. Shapley",
-        "Stoch. Banzhaf",
     ]
     results: list[dict] = []
 
@@ -570,14 +565,6 @@ def main() -> None:
         fm_a = Marking({goal_b: 1})  # Team A wants Goal_B
         fm_b = Marking({goal_a: 1})  # Team B wants Goal_A
 
-        # --- Structural indices: compute per-team, merge ---
-        # Team A perspective (fm = Goal_B)
-        agents_a, v_a = _precompute_characteristic_function(net, im, fm_a, agent_mapping)
-        v_a_float = {k: float(val) for k, val in v_a.items()}
-        # Team B perspective (fm = Goal_A)
-        agents_b, v_b = _precompute_characteristic_function(net, im, fm_b, agent_mapping)
-        v_b_float = {k: float(val) for k, val in v_b.items()}
-
         def _merge(vals_a: dict[str, float], vals_b: dict[str, float]) -> dict[str, float]:
             """Take Team A agents from vals_a, Team B agents from vals_b."""
             merged = {}
@@ -585,15 +572,8 @@ def main() -> None:
                 merged[agent] = vals_a[agent] if agent in team_a_agents else vals_b[agent]
             return merged
 
+        # --- Path-based indices: compute per-team, merge ---
         indices: dict[str, dict[str, float]] = {
-            "Shapley-Shubik": _merge(
-                shapley_shubik_from_values(agents_a, v_a_float),
-                shapley_shubik_from_values(agents_b, v_b_float),
-            ),
-            "Banzhaf": _merge(
-                banzhaf_from_values(agents_a, v_a_float),
-                banzhaf_from_values(agents_b, v_b_float),
-            ),
             "Usability": _merge(
                 usability(net, im, fm_a, agent_mapping, start_place="Defense_A"),
                 usability(net, im, fm_b, agent_mapping, start_place="Defense_B"),
@@ -604,18 +584,18 @@ def main() -> None:
             ),
         }
 
-        # --- Stochastic indices: compute per-team, merge ---
+        # --- Stochastic coalition indices: compute per-team, merge ---
         s_agents_a, s_v_a = build_stochastic_cf_2team(
             agent_mapping, M, P_GOAL, GAMMA, team="A"
         )
         s_agents_b, s_v_b = build_stochastic_cf_2team(
             agent_mapping, M, P_GOAL, GAMMA, team="B"
         )
-        indices["Stoch. Shapley"] = _merge(
+        indices["Shapley-Shubik"] = _merge(
             shapley_shubik_from_values(s_agents_a, s_v_a),
             shapley_shubik_from_values(s_agents_b, s_v_b),
         )
-        indices["Stoch. Banzhaf"] = _merge(
+        indices["Banzhaf"] = _merge(
             banzhaf_from_values(s_agents_a, s_v_a),
             banzhaf_from_values(s_agents_b, s_v_b),
         )
