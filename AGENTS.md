@@ -170,7 +170,9 @@ def is_reachable_restricted(
 ```
 BFS reachability check using only allowed transitions. Uses covering semantics (`m >= fm`).
 
-#### Coalition-based power indices
+#### Coalition-based power indices (binary)
+
+Used for standard (unweighted) Petri nets. The characteristic function `v(S) ∈ {0, 1}` is computed internally via reachability. Used by `example/`, `sequential/`, `fork-join/` scenarios.
 
 ```python
 def shapley_shubik(
@@ -187,7 +189,9 @@ def banzhaf(
 ```
 Banzhaf power index. Raw swing count normalized by default. `eta_i = sum_{S⊆N\{i}} (v(S∪{i}) - v(S))`.
 
-#### Pre-computed characteristic function variants
+#### Coalition-based power indices (stochastic)
+
+Used for stochastic Petri nets. Accept a continuous-valued characteristic function `v(S) ∈ [0, 1]` built externally (e.g. from absorbing Markov chains on SPNs). Used by `football/` and `football-2team/` scenarios.
 
 ```python
 def shapley_shubik_from_values(
@@ -195,7 +199,7 @@ def shapley_shubik_from_values(
     v: dict[frozenset[str], float],
 ) -> dict[str, float]
 ```
-Shapley-Shubik index from a pre-computed continuous-valued characteristic function `v: 2^N → [0,1]`. Normalized to sum to 1.
+Shapley-Shubik index from a pre-computed characteristic function. Normalized to sum to 1.
 
 ```python
 def banzhaf_from_values(
@@ -204,9 +208,11 @@ def banzhaf_from_values(
     *, normalized: bool = True,
 ) -> dict[str, float]
 ```
-Banzhaf index from a pre-computed continuous-valued characteristic function.
+Banzhaf index from a pre-computed characteristic function.
 
 #### Path-based indices
+
+Work on both standard and stochastic nets (they operate on the reachability graph structure, not weights directly).
 
 ```python
 def usability(
@@ -219,18 +225,10 @@ Usability index via prefix-based shared credit. For each simple path, all non-em
 ```python
 def gatekeeper(
     net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
-    *, normalized: bool = True,
+    *, normalized: bool = True, start_place: str | None = None,
 ) -> dict[str, float]
 ```
-Gatekeeper power index based on immediate dominators (idom) in the transition graph. `idom_count[t]` = number of transitions whose immediate dominator is `t`. For each simple path, each transition gets credit `idom_count[t] / (|T| * k)` shared among `k` capable agents. Averaged over all paths.
-
-```python
-def gatekeeper_reach(
-    net: PetriNet, im: Marking, fm: Marking, agent_mapping: AgentMapping,
-    *, normalized: bool = True,
-) -> dict[str, float]
-```
-Reachability-weighted gatekeeper variant. Weight = `|R(m')|` (number of markings reachable from the marking after firing the transition). Replaces the positional `(L-p)/L` proxy with actual forward-reachability set size. Credit shared equally among capable agents, summed across all simple paths.
+Gatekeeper power index based on immediate dominators (idom) in the transition graph. `idom_count[t]` = number of transitions whose immediate dominator is `t`. For each simple path, each transition gets credit `idom_count[t] / (|T| * k)` shared among `k` capable agents. Averaged over all paths. Optional `start_place` overrides initial marking.
 
 #### Distributional metrics
 
@@ -249,7 +247,6 @@ Gini index of the supply-degree distribution across transitions (how unevenly ag
 - `_resolve_transitions(net, agent_mapping)` — map transition names to `Transition` objects
 - `_precompute_characteristic_function(net, im, fm, agent_mapping)` — enumerate all coalitions, compute characteristic function `v`
 - `_all_simple_paths(net, im, fm, *, start_place=None)` — DFS for all simple paths (no repeated markings)
-- `_reachability_set_size(net, marking)` — BFS count of all markings reachable from a given marking
 - `_build_transition_graph(net, im)` — BFS to build directed transition graph with virtual root `_ROOT_`
 - `_compute_idom(adj, root, transitions)` — iterative dominator computation, returns idom mapping
 

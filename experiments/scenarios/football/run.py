@@ -467,8 +467,12 @@ def main() -> None:
             "Gatekeeper": gatekeeper(net, im, fm, agent_mapping),
         }
         s_agents, s_v = build_stochastic_cf(agent_mapping, M, P_GOAL, GAMMA)
-        indices["Shapley-Shubik"] = shapley_shubik_from_values(s_agents, s_v)
-        indices["Banzhaf"] = banzhaf_from_values(s_agents, s_v)
+        ss_raw = shapley_shubik_from_values(s_agents, s_v)
+        bz_raw = banzhaf_from_values(s_agents, s_v)
+        ss_total = sum(ss_raw.values())
+        bz_total = sum(bz_raw.values())
+        indices["Shapley-Shubik"] = {a: v / ss_total for a, v in ss_raw.items()} if ss_total > 0 else ss_raw
+        indices["Banzhaf"] = {a: v / bz_total for a, v in bz_raw.items()} if bz_total > 0 else bz_raw
 
         results.append(
             {

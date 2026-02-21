@@ -143,6 +143,11 @@ def shapley_shubik_from_values(
 
     Like :func:`shapley_shubik` but accepts a continuous-valued *v* mapping
     coalitions to real numbers in [0, 1] instead of binary reachability.
+
+    Returns raw Shapley values (no normalization).  By the efficiency
+    property they sum to ``v(N)`` and each value is bounded in ``[-1, 1]``
+    for ``v`` in ``[0, 1]``.  Callers should normalize to sum-to-1 at the
+    scenario level if needed.
     """
     n = len(agents)
     n_fact = factorial(n)
@@ -158,11 +163,6 @@ def shapley_shubik_from_values(
                 s_with_i = s | {i}
                 total += weight * (v[s_with_i] - v[s])
         phi[i] = total
-
-    # Normalize to sum to 1
-    total_phi = sum(phi.values())
-    if total_phi > 0:
-        phi = {a: val / total_phi for a, val in phi.items()}
 
     return phi
 
@@ -208,20 +208,6 @@ def _all_simple_paths(
 
     _dfs(im, [], {im})
     return paths
-
-
-def _reachability_set_size(net: PetriNet, marking: Marking) -> int:
-    """Count all markings reachable from *marking* (including itself) via BFS."""
-    visited: set[Marking] = {marking}
-    queue: list[Marking] = [marking]
-    while queue:
-        m = queue.pop(0)
-        for t in pn_semantics.enabled_transitions(net, m):
-            m2 = pn_semantics.execute(t, net, m)
-            if m2 not in visited:
-                visited.add(m2)
-                queue.append(m2)
-    return len(visited)
 
 
 def usability(
@@ -457,54 +443,6 @@ def gatekeeper(
     return scores
 
 
-def gatekeeper_reach(
-    net: PetriNet,
-    im: Marking,
-    fm: Marking,
-    agent_mapping: AgentMapping,
-    *,
-    normalized: bool = True,
-) -> dict[str, float]:
-    """Gatekeeper variant weighted by forward-reachability set size.
-
-    For each transition in a simple path, the weight is the number of markings
-    reachable from the marking obtained after firing that transition.  Credit is
-    shared equally among the agents that can fire the transition.
-
-    When *normalized* is True (default), scores are rescaled to sum to 1.
-    """
-    agents = sorted({a for s in agent_mapping.values() for a in s})
-    paths = _all_simple_paths(net, im, fm)
-
-    if not paths:
-        return {a: 0.0 for a in agents}
-
-    by_name = {t.name: t for t in net.transitions}
-    reach_cache: dict[Marking, int] = {}
-
-    scores: dict[str, float] = {a: 0.0 for a in agents}
-    for path in paths:
-        marking = im
-        for t_name in path:
-            marking = pn_semantics.execute(by_name[t_name], net, marking)
-            if marking not in reach_cache:
-                reach_cache[marking] = _reachability_set_size(net, marking)
-            weight = reach_cache[marking]
-            capable = agent_mapping.get(t_name, set())
-            n_capable = len(capable)
-            if n_capable > 0:
-                contribution = weight / n_capable
-                for agent in capable:
-                    scores[agent] += contribution
-
-    if normalized:
-        total = sum(scores.values())
-        if total > 0:
-            scores = {a: v / total for a, v in scores.items()}
-
-    return scores
-
-
 def gini_coefficient(values: list[float]) -> float:
     """Gini coefficient of a distribution (0 = equal, 1 = maximally unequal)."""
     n = len(values)
@@ -584,6 +522,12 @@ def banzhaf_from_values(
 
     Like :func:`banzhaf` but accepts a continuous-valued *v* mapping
     coalitions to real numbers in [0, 1] instead of binary reachability.
+
+    When *normalized* is True, returns the **absolute (Penrose) Banzhaf
+    index**: each agent's total marginal contribution divided by ``2^{n-1}``
+    (the number of coalitions each agent can join).  Values are bounded in
+    ``[-1, 1]`` for ``v`` in ``[0, 1]``.  Callers should normalize to
+    sum-to-1 at the scenario level if needed.
     """
     n = len(agents)
     raw: dict[str, float] = {}
@@ -601,7 +545,5 @@ def banzhaf_from_values(
     if not normalized:
         return raw
 
-    total = sum(raw.values())
-    if total == 0:
-        return {a: 0.0 for a in agents}
-    return {a: val / total for a, val in raw.items()}
+    denom = 2 ** (n - 1)
+    return {a: val / denom for a, val in raw.items()}
