@@ -159,9 +159,9 @@ def stochastic_value_2team(
     When *team* is ``"A"``, Goal_B gets reward 1 and Goal_A gets reward 0.
     When *team* is ``"B"``, Goal_A gets reward 1 and Goal_B gets reward 0.
     """
-    if da == 0 and ma == 0 and aa == 0:
+    if da == 0 and ma == 0 and aa == 0 and team == "A":
         return 0.0
-    if db == 0 and mb == 0 and ab == 0:
+    if db == 0 and mb == 0 and ab == 0 and team == "B":
         return 0.0
 
     # Absorbing-state markers: -1 = Goal_B, -2 = Goal_A
@@ -196,7 +196,7 @@ def stochastic_value_2team(
     A = np.eye(6) - gamma * Q
     b = gamma * r
     V = np.linalg.solve(A, b)
-    return float(V[0])  # Value at Defense_A (starting state)
+    return float(V[0]) if team == "A" else float(V[3])
 
 
 def build_stochastic_cf_2team(
