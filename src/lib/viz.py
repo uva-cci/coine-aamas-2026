@@ -248,9 +248,10 @@ def plot_power_heatmap(
         ax.set_title(idx_name, fontsize=10)
         for r in range(len(config_labels)):
             for c in range(len(agent_labels)):
+                rgba = im.cmap(im.norm(data[r, c]))
+                lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
                 ax.text(c, r, f"{data[r, c]:.3f}", ha="center", va="center",
-                        fontsize=7, color="black" if data[r, c] < data.max() * 0.7
-                        else "white")
+                        fontsize=7, color="black" if lum > 0.5 else "white")
         fig.colorbar(im, ax=ax, shrink=0.8)
 
     for idx in range(n_indices, nrows * ncols):
