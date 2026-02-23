@@ -24,20 +24,8 @@ for formation in ${FORMATIONS//,/ }; do
 done
 echo ""
 
-# --- Path-based indices (fast): all 10 formations ---
-for index in usability gatekeeper; do
-    echo "--- Benchmarking ${index} ---"
-    hyperfine \
-        --warmup 2 \
-        --min-runs 10 \
-        --parameter-list formation "$FORMATIONS" \
-        --export-json "${RESULTS_DIR}/${index}.json" \
-        "uv run ${SCRIPT_DIR}/bench_one.py --index ${index} --formation {formation} --pnml ${PNML_DIR}/{formation}.pnml"
-    echo ""
-done
-
-# --- Coalition-based indices (slow): skip largest formations ---
-for index in shapley-shubik banzhaf; do
+# --- Compute indices on all formations ---
+for index in usability gatekeeper shapley-shubik banzhaf; do
     echo "--- Benchmarking ${index} ---"
     hyperfine \
         --warmup 2 \
