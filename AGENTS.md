@@ -75,9 +75,9 @@ Load a Petri net with stochastic information. Returns `(net, im, fm, stochastic_
 #### Petri net rendering
 
 ```python
-def build_stochastic_decorations(stochastic_map: dict[Any, Any]) -> dict[Any, dict[str, str]]
+def build_stochastic_decorations(net: PetriNet, stochastic_map: dict[Any, Any]) -> dict[Any, dict[str, str]]
 ```
-Convert a stochastic map into a pm4py decorations dict (label with weight, blue color).
+Convert a stochastic map into a pm4py decorations dict (label with firing probability, blue color).
 
 ```python
 def save_net_png(
@@ -95,7 +95,6 @@ All plot functions below share a common signature pattern for multi-config, mult
 - `agent_labels: list[str]` — label per agent
 - `index_powers: dict[str, list[list[float]]]` — `{index_name: [[power per agent] per config]}`
 - `output_path: Path` — destination PNG
-- `title: str = ""` — optional figure title
 
 ```python
 def plot_power_bars(

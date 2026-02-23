@@ -10,18 +10,39 @@ from pm4py.objects.petri_net.obj import Marking, PetriNet
 
 
 def build_stochastic_decorations(
+    net: PetriNet,
     stochastic_map: dict[Any, Any],
 ) -> dict[Any, dict[str, str]]:
-    """Build a decorations dict labelling each transition with its weight.
+    """Build a decorations dict labelling each transition with its firing probability.
 
-    Accepts a stochastic_map as returned by ``load_pnml_stochastic``.
+    Accepts a ``net`` and a ``stochastic_map`` as returned by
+    ``load_pnml_stochastic``.  For each transition, the probability is
+    ``weight / sum(weights from same input place)``.
     Returns a dict suitable for pm4py's ``decorations`` parameter.
     """
+    weights = {t.name: rv.get_weight() for t, rv in stochastic_map.items()}
+
+    # Map transition name → source place name
+    t_input: dict[str, str] = {}
+    for arc in net.arcs:
+        src, tgt = arc.source.name, arc.target.name
+        if tgt in weights:
+            t_input[tgt] = src
+
+    # Total weight per source place
+    source_totals: dict[str, float] = {}
+    for t_name, src_place in t_input.items():
+        source_totals[src_place] = source_totals.get(src_place, 0.0) + weights.get(
+            t_name, 0
+        )
+
     decorations: dict[Any, dict[str, str]] = {}
     for transition, rv in stochastic_map.items():
-        weight = rv.get_weight()
+        w = rv.get_weight()
+        total = source_totals.get(t_input.get(transition.name, ""), 0)
+        prob = w / total if total > 0 else 0
         decorations[transition] = {
-            "label": f"{transition.label}\nw={weight}",
+            "label": f"{transition.label}\n\u03bb={prob:.2f}",
             "color": "#AAAAFF",
         }
     return decorations
@@ -49,7 +70,6 @@ def plot_granularity_scatter(
     granularities: list[float],
     index_values: dict[str, list[float]],
     output_path: Path,
-    title: str = "",
     ylabel: str = "",
 ) -> None:
     """Scatter plot: granularity (x) vs a per-index summary statistic (y).
@@ -60,7 +80,6 @@ def plot_granularity_scatter(
     granularities: x values (one per config)
     index_values:  {index_name: [y_value_per_config]}
     output_path:   where to save (PDF/PNG)
-    title:         optional plot title
     ylabel:        y-axis label
     """
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -87,8 +106,6 @@ def plot_granularity_scatter(
 
     ax.set_xlabel("Granularity ($\\mathcal{G}$)")
     ax.set_ylabel(ylabel)
-    if title:
-        ax.set_title(title)
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
@@ -102,7 +119,6 @@ def plot_power_bars(
     agent_labels: list[str],
     index_powers: dict[str, list[list[float]]],
     output_path: Path,
-    title: str = "",
 ) -> None:
     """Grouped bar chart of per-agent power across configurations.
 
@@ -112,7 +128,6 @@ def plot_power_bars(
     agent_labels:  names for bars within each group (one per agent/role)
     index_powers:  {index_name: [[power_per_agent] for each config]}
     output_path:   where to save (PDF/PNG)
-    title:         optional suptitle
     """
     n_indices = len(index_powers)
     n_configs = len(config_labels)
@@ -138,18 +153,14 @@ def plot_power_bars(
 
     axes[0].set_ylabel("Power")
     axes[0].legend(fontsize=7)
-    if title:
-        fig.suptitle(title, fontsize=12, y=1.02)
     fig.tight_layout()
     fmt = Path(output_path).suffix.lstrip(".")
     fig.savefig(output_path, format=fmt, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
-def _save(fig: plt.Figure, output_path: Path, title: str) -> None:
+def _save(fig: plt.Figure, output_path: Path) -> None:
     """Common save logic for all plots."""
-    if title:
-        fig.suptitle(title, fontsize=12, y=1.02)
     fig.tight_layout()
     fmt = Path(output_path).suffix.lstrip(".")
     fig.savefig(output_path, format=fmt, dpi=300, bbox_inches="tight")
@@ -176,7 +187,6 @@ def plot_index_correlation(
     agent_labels: list[str],
     index_powers: dict[str, list[list[float]]],
     output_path: Path,
-    title: str = "",
 ) -> None:
     """Pairwise scatter of index values; each point is one agent in one config.
 
@@ -213,7 +223,7 @@ def plot_index_correlation(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper right", fontsize=7)
-    _save(fig, output_path, title)
+    _save(fig, output_path)
 
 
 # ── 2. Power heatmap ─────────────────────────────────────────────────────
@@ -224,7 +234,6 @@ def plot_power_heatmap(
     agent_labels: list[str],
     index_powers: dict[str, list[list[float]]],
     output_path: Path,
-    title: str = "",
 ) -> None:
     """Heatmap grid: rows = configs, cols = agents, color = power value.
 
@@ -257,7 +266,7 @@ def plot_power_heatmap(
     for idx in range(n_indices, nrows * ncols):
         axes[idx // ncols, idx % ncols].set_visible(False)
 
-    _save(fig, output_path, title)
+    _save(fig, output_path)
 
 
 # ── 3. Lorenz curves ─────────────────────────────────────────────────────
@@ -267,7 +276,6 @@ def plot_lorenz_curves(
     config_labels: list[str],
     index_powers: dict[str, list[list[float]]],
     output_path: Path,
-    title: str = "",
 ) -> None:
     """Lorenz curve per config (one subplot per index).
 
@@ -303,7 +311,7 @@ def plot_lorenz_curves(
     for idx in range(n_indices, nrows * ncols):
         axes[idx // ncols, idx % ncols].set_visible(False)
 
-    _save(fig, output_path, title)
+    _save(fig, output_path)
 
 
 # ── 4. Rank agreement (Spearman correlation heatmaps) ────────────────────
@@ -313,7 +321,6 @@ def plot_rank_agreement(
     config_labels: list[str],
     index_powers: dict[str, list[list[float]]],
     output_path: Path,
-    title: str = "",
 ) -> None:
     """Spearman rank-correlation matrix between indices, one heatmap per config."""
     names = list(index_powers.keys())
@@ -346,7 +353,7 @@ def plot_rank_agreement(
                         fontsize=7)
         fig.colorbar(im, ax=ax, shrink=0.8)
 
-    _save(fig, output_path, title)
+    _save(fig, output_path)
 
 
 # ── 5. Power deltas from baseline ────────────────────────────────────────
@@ -358,7 +365,6 @@ def plot_power_deltas(
     index_powers: dict[str, list[list[float]]],
     output_path: Path,
     baseline_idx: int = 0,
-    title: str = "",
 ) -> None:
     """Bar chart of power change from a baseline config, per agent per index."""
     n_indices = len(index_powers)
@@ -388,4 +394,4 @@ def plot_power_deltas(
 
     axes[0].set_ylabel(f"$\\Delta$ Power (from {config_labels[baseline_idx]})")
     axes[0].legend(fontsize=7)
-    _save(fig, output_path, title)
+    _save(fig, output_path)

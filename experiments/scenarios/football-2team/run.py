@@ -657,7 +657,6 @@ def main() -> None:
                 grans,
                 series,
                 path,
-                title=f"Football 2-Team: Granularity vs {ylabel}",
                 ylabel=ylabel,
             )
             print(f"Saved plot to {path}", file=sys.stderr)
@@ -679,7 +678,6 @@ def main() -> None:
                     agent_labels,
                     index_powers,
                     p,
-                    title="Football 2-Team: Power per Role",
                 ),
             ),
             (
@@ -689,7 +687,6 @@ def main() -> None:
                     agent_labels,
                     index_powers,
                     p,
-                    title="Football 2-Team: Index Correlation",
                 ),
             ),
             (
@@ -699,7 +696,6 @@ def main() -> None:
                     agent_labels,
                     index_powers,
                     p,
-                    title="Football 2-Team: Power Heatmap",
                 ),
             ),
             (
@@ -708,7 +704,6 @@ def main() -> None:
                     labels,
                     index_powers,
                     p,
-                    title="Football 2-Team: Lorenz Curves",
                 ),
             ),
             (
@@ -717,7 +712,6 @@ def main() -> None:
                     labels,
                     index_powers,
                     p,
-                    title="Football 2-Team: Rank Agreement",
                 ),
             ),
             (
@@ -728,7 +722,6 @@ def main() -> None:
                     index_powers,
                     p,
                     baseline_idx=0,
-                    title="Football 2-Team: Power Deltas",
                 ),
             ),
         ]:

@@ -143,6 +143,19 @@ def _build_dot(net, im, fm, smap) -> graphviz.Digraph:
     """
     weights = {t.name: rv.get_weight() for t, rv in smap.items()}
 
+    # Compute per-transition probabilities (weight / sum of weights from same place)
+    t_input: dict[str, str] = {}  # transition_name → source place
+    for arc in net.arcs:
+        src, tgt = arc.source.name, arc.target.name
+        if tgt in weights:
+            t_input[tgt] = src
+
+    source_totals: dict[str, float] = {}
+    for t_name, src_place in t_input.items():
+        source_totals[src_place] = source_totals.get(src_place, 0.0) + weights.get(
+            t_name, 0
+        )
+
     dot = graphviz.Digraph()
     dot.attr(rankdir="LR", bgcolor="transparent", nodesep="0.6", ranksep="1.0")
     dot.attr("edge", penwidth="2.0")
@@ -167,8 +180,10 @@ def _build_dot(net, im, fm, smap) -> graphviz.Digraph:
 
     # Transitions
     for t in net.transitions:
-        w = weights.get(t.name, "")
-        label = f"{t.name}\nw={w}"
+        w = weights.get(t.name, 0)
+        total = source_totals.get(t_input.get(t.name, ""), 0)
+        prob = w / total if total > 0 else 0
+        label = f"{t.name}\n\u03bb={prob:.2f}"
         dot.node(
             t.name,
             label=label,
@@ -518,7 +533,6 @@ def main() -> None:
                 grans,
                 series,
                 path,
-                title=f"Football: Granularity vs {ylabel}",
                 ylabel=ylabel,
             )
             print(f"Saved plot to {path}", file=sys.stderr)
@@ -536,31 +550,31 @@ def main() -> None:
             (
                 "power_bars",
                 lambda p: plot_power_bars(
-                    labels, agent_labels, index_powers, p, title="Football: Power per Role"
+                    labels, agent_labels, index_powers, p
                 ),
             ),
             (
                 "index_correlation",
                 lambda p: plot_index_correlation(
-                    labels, agent_labels, index_powers, p, title="Football: Index Correlation"
+                    labels, agent_labels, index_powers, p
                 ),
             ),
             (
                 "power_heatmap",
                 lambda p: plot_power_heatmap(
-                    labels, agent_labels, index_powers, p, title="Football: Power Heatmap"
+                    labels, agent_labels, index_powers, p
                 ),
             ),
             (
                 "lorenz_curves",
                 lambda p: plot_lorenz_curves(
-                    labels, index_powers, p, title="Football: Lorenz Curves"
+                    labels, index_powers, p
                 ),
             ),
             (
                 "rank_agreement",
                 lambda p: plot_rank_agreement(
-                    labels, index_powers, p, title="Football: Rank Agreement"
+                    labels, index_powers, p
                 ),
             ),
             (
@@ -571,7 +585,6 @@ def main() -> None:
                     index_powers,
                     p,
                     baseline_idx=0,
-                    title="Football: Power Deltas from 2-5-3",
                 ),
             ),
         ]:

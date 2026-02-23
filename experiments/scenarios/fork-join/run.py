@@ -270,7 +270,6 @@ def main() -> None:
                 ]
             path = out_dir / f"granularity_vs_{stat_name}.{ext}"
             plot_granularity_scatter(labels, grans, series, path,
-                                     title=f"Fork-Join: Granularity vs {ylabel}",
                                      ylabel=ylabel)
             print(f"Saved plot to {path}", file=sys.stderr)
 
@@ -284,23 +283,17 @@ def main() -> None:
 
         for name, fn in [
             ("power_bars", lambda p: plot_power_bars(
-                labels, agent_labels, index_powers, p,
-                title="Fork-Join: Power per Agent")),
+                labels, agent_labels, index_powers, p)),
             ("index_correlation", lambda p: plot_index_correlation(
-                labels, agent_labels, index_powers, p,
-                title="Fork-Join: Index Correlation")),
+                labels, agent_labels, index_powers, p)),
             ("power_heatmap", lambda p: plot_power_heatmap(
-                labels, agent_labels, index_powers, p,
-                title="Fork-Join: Power Heatmap")),
+                labels, agent_labels, index_powers, p)),
             ("lorenz_curves", lambda p: plot_lorenz_curves(
-                labels, index_powers, p,
-                title="Fork-Join: Lorenz Curves")),
+                labels, index_powers, p)),
             ("rank_agreement", lambda p: plot_rank_agreement(
-                labels, index_powers, p,
-                title="Fork-Join: Rank Agreement")),
+                labels, index_powers, p)),
             ("power_deltas", lambda p: plot_power_deltas(
-                labels, agent_labels, index_powers, p, baseline_idx=0,
-                title="Fork-Join: Power Deltas from Even")),
+                labels, agent_labels, index_powers, p, baseline_idx=0)),
         ]:
             path = out_dir / f"{name}.{ext}"
             fn(path)
